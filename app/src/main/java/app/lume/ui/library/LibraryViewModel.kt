@@ -5,7 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.Preset
-import app.lume.core.PresetLimitReached
+import app.lume.data.PresetLimitReached
 import app.lume.core.RecipeJson
 import app.lume.data.Draft
 import app.lume.data.DraftRepository

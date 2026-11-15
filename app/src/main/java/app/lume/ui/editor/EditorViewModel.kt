@@ -10,7 +10,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.EditHistory
 import app.lume.core.Preset
-import app.lume.core.PresetLimitReached
+import app.lume.data.PresetLimitReached
 import app.lume.core.Recipe
 import app.lume.data.DraftRepository
 import app.lume.data.PresetRepository
