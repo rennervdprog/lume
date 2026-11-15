@@ -1,0 +1,61 @@
+name: CI
+
+# O gradle-wrapper.jar não está commitado (ele é binário), então o CI usa
+# o Gradle 9.3.1 instalado pela action — a mesma versão do
+# gradle-wrapper.properties. O build e os testes são os mesmos; só a
+# invocação muda (gradle em vez de ./gradlew).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build + unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Build debug APK + unit tests
+        run: gradle :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lume-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lume-test-reports-${{ github.sha }}
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7

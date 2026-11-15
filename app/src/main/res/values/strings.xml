@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Nome PROVISÓRIO (veio do protótipo). Decidir o nome final antes
+         de publicar na Play Store. -->
+    <string name="app_name">Lume</string>
+</resources>

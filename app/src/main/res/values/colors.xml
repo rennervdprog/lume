@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Usado apenas pelo fundo do ícone adaptativo. As cores da UI vivem
+         no tema Compose (ui/theme/Theme.kt), nunca aqui. -->
+    <color name="launcher_background">#121417</color>
+</resources>
