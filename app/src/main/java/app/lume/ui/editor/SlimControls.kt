@@ -89,9 +89,9 @@ internal fun SlimSlider(
                         while (!finished) {
                             val event = awaitPointerEvent()
                             val change = event.changes.firstOrNull() ?: break
-                            if (change.changedToUpOrCancelled()) {
+                            if (!change.pressed) {
                                 finished = true
-                            } else if (change.positionChanged()) {
+                            } else if (change.position != change.previousPosition) {
                                 latestOnValueChange(valueFromX(change.position.x))
                             }
                             change.consume()
