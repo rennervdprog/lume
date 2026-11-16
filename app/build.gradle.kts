@@ -65,6 +65,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.zxing.core)
     testImplementation(libs.junit)
+    // O BOM declarado só em `implementation` não alcança o classpath
+    // do androidTest: sem esta linha o Gradle não resolve a versão do
+    // ui-test-junit4 (falha da run #11).
+    androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
