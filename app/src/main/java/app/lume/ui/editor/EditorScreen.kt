@@ -128,6 +128,19 @@ fun EditorScreen(
         }
     }
 
+    // Alvo pendente da Home: a grade abre o Editor já na ferramenta
+    // tocada (e na subferramenta, quando há: HSL, Curva). Consumido
+    // uma vez ao entrar; sem pedido, abre no padrão (Luz).
+    LaunchedEffect(Unit) {
+        PendingEditorTarget.take()?.let { target ->
+            selectedTool = target.tool
+            target.lightSub?.let { lightSub = it }
+            target.colorSub?.let { colorSub = it }
+            target.effectsSub?.let { effectsSub = it }
+            panelVisible = true
+        }
+    }
+
     // Abrir uma ferramenta marca a base do X/✓.
     LaunchedEffect(selectedTool) {
         viewModel.beginPanelSession()

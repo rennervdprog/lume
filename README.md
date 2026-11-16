@@ -18,7 +18,8 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até o Editor v3 (0.5.0, commit `062563b`).** Veredito visual
+verde até os testes de UI (run 13, commit `cdd0c04`). Home nova
+(0.6.0) escrita localmente, aguardando envio.** Veredito visual
 da v3 no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
@@ -52,6 +53,18 @@ verificado (estático + CI + teste no aparelho).
   do corte em pílula no topo da foto; presets em miniaturas quadradas
   com a foto; Biblioteca com os cartões de preset sobre a foto do
   primeiro rascunho (reserva: amostra de cores, sem rascunho).
+- **Home nova** (estrutura da home do Polish, lida dos arquivos do
+  REA — medidas, colapso e fileiras; identidade, textos e ícones
+  próprios do Lume): carrossel de 3 banners (foto do rascunho com o
+  clima de um preset, reserva em gradiente sem foto inventada) com
+  autoplay + bolinhas; heróis "Editar foto" (grande) e "Presets";
+  grade de 8 funções que abre o Editor já na ferramenta tocada
+  (HSL e Curva caem na subferramenta certa; QR cai no painel de
+  presets); ao rolar, banner e heróis somem em fade com parallax e
+  uma tira fixa de funções prende no topo; fileiras de coleções de
+  presets e rascunhos recentes; grade completa de presets com
+  filtros, seleção em lote e importar — tudo que a Biblioteca
+  antiga fazia continua na Home nova.
 - **Painéis Luz, Cor, Efeitos e Presets** sobre a receita: sliders de
   luz/cor, HSL por cor (4 canais grátis, 8 Pro), chips de curva tonal,
   claridade/vinheta/grão/desbotado, trilho de ferramentas, histograma,

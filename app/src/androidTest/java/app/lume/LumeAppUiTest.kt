@@ -2,6 +2,7 @@ package app.lume
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,7 +25,8 @@ import org.junit.runner.RunWith
  * Roda no CI via `:app:connectedDebugAndroidTest` (job "UI tests").
  * Banco e DataStore são os reais do aparelho de teste; nenhum teste
  * aqui cria dado (preset ou rascunho), então a ordem não importa e
- * o herói da Biblioteca nasce sempre na versão "sem rascunhos".
+ * o banner da Home nasce sempre na versão "sem rascunhos"
+ * (gradiente, sem foto).
  */
 @RunWith(AndroidJUnit4::class)
 class LumeAppUiTest {
@@ -34,6 +36,9 @@ class LumeAppUiTest {
 
     private fun nodesWith(text: String) =
         composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+
+    private fun tagExists(tag: String) =
+        composeRule.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
 
     /** Rola a lista indicada até o texto existir. */
     private fun awaitText(text: String, listTag: String, maxSwipes: Int = 8) {
@@ -49,12 +54,31 @@ class LumeAppUiTest {
 
     @Test
     fun bibliotecaAbreComHeroEPresets() {
-        composeRule.onNodeWithText("Editar uma foto").assertIsDisplayed()
-        composeRule.onNodeWithText("Abrir foto").assertIsDisplayed()
-        awaitText("Presets", "library_list")
+        composeRule.onNodeWithTag("home_banner").assertIsDisplayed()
+        composeRule.onNodeWithTag("hero_edit").assertIsDisplayed()
+        composeRule.onNodeWithTag("hero_presets").assertIsDisplayed()
+        composeRule.onNodeWithTag("fn_light").assertExists()
+        composeRule.onNodeWithTag("fn_qr").assertExists()
+        awaitText("Luz da Manhã", "library_list")
+        composeRule.onNodeWithTag("presets_title").assertExists()
         composeRule.onNodeWithText("Luz da Manhã").assertExists()
         composeRule.onNodeWithText("Cinza Elegante").assertExists()
         uitestShot("01_biblioteca")
+    }
+
+    @Test
+    fun homeFixaTiraAoRolar() {
+        var tries = 0
+        while (!tagExists("pinned_strip") && tries < 4) {
+            composeRule.onNodeWithTag("library_list")
+                .performTouchInput { swipeUp() }
+            composeRule.waitForIdle()
+            tries++
+        }
+        composeRule.waitUntil(timeoutMillis = 8000) { tagExists("pinned_strip") }
+        composeRule.onNodeWithTag("strip_light").assertExists()
+        composeRule.onNodeWithTag("strip_crop").assertExists()
+        uitestShot("04_home_tira")
     }
 
     @Test
@@ -67,7 +91,7 @@ class LumeAppUiTest {
         uitestShot("02_conta")
         composeRule.onNodeWithContentDescription("Voltar").performClick()
         composeRule.waitUntil(timeoutMillis = 8000) {
-            nodesWith("Editar uma foto")
+            nodesWith("Editar foto")
         }
     }
 
