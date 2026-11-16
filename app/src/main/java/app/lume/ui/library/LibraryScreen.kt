@@ -59,6 +59,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lume.core.Preset
+import app.lume.core.RecipeColorMatrix
 import app.lume.data.Draft
 import app.lume.imaging.BitmapLoader
 import app.lume.ui.components.PresetSwatch
@@ -366,6 +370,12 @@ fun LibraryScreen(
                 }
             }
             item {
+                // Os cartões mostram a foto do primeiro rascunho com o
+                // visual do preset (como no Polish). Sem rascunho, a
+                // amostra de cores volta como reserva.
+                val sample = rememberSampleBitmap(
+                    state.drafts.firstOrNull()?.photoUri
+                )
                 FlowRow(
                     maxItemsInEachRow = 2,
                     horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm),
@@ -374,6 +384,7 @@ fun LibraryScreen(
                     visiblePresets.forEach { preset ->
                         PresetGridCard(
                             preset = preset,
+                            sample = sample,
                             onClick = {
                                 scope.launch {
                                     snackbarHostState.showSnackbar(
@@ -432,10 +443,18 @@ fun LibraryScreen(
 @Composable
 private fun PresetGridCard(
     preset: Preset,
+    sample: ImageBitmap?,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
+    // Miniatura rápida pela matriz (aproximação v1): o visual
+    // completo do preset só aparece no Editor e na exportação.
+    val filter = remember(preset.recipe) {
+        ColorFilter.colorMatrix(
+            ColorMatrix(RecipeColorMatrix.values(preset.recipe))
+        )
+    }
     Card(
         onClick = onClick,
         colors = CardDefaults.cardColors(
@@ -444,12 +463,24 @@ private fun PresetGridCard(
         modifier = modifier.fillMaxWidth(0.48f)
     ) {
         Column {
-            PresetSwatch(
-                preset = preset,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(84.dp)
-            )
+            if (sample != null) {
+                Image(
+                    bitmap = sample,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    colorFilter = filter,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                )
+            } else {
+                PresetSwatch(
+                    preset = preset,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(84.dp)
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -578,6 +609,30 @@ private fun DraftCard(
             }
         }
     }
+}
+
+/**
+ * A foto de amostra dos cartões de preset: o primeiro rascunho,
+ * decodificado uma vez. Nulo sem rascunho ou se a foto sumiu.
+ */
+@Composable
+private fun rememberSampleBitmap(photoUri: String?): ImageBitmap? {
+    val context = LocalContext.current
+    var bitmap by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(photoUri) {
+        if (photoUri == null) return@LaunchedEffect
+        val loaded = withContext(Dispatchers.IO) {
+            try {
+                BitmapLoader.decodePreview(context, Uri.parse(photoUri))
+            } catch (e: Exception) {
+                null
+            }
+        }
+        bitmap = loaded
+    }
+
+    return bitmap?.asImageBitmap()
 }
 
 @Composable

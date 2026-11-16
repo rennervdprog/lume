@@ -11,10 +11,12 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -26,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Redo
@@ -46,12 +49,12 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,6 +65,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -77,6 +81,7 @@ import app.lume.ui.components.SupportingText
 import app.lume.ui.components.rememberPhotoPickerLauncher
 import app.lume.ui.theme.LumeSpacing
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,7 +105,11 @@ fun EditorScreen(
     var showOriginal by remember { mutableStateOf(false) }
     var panelVisible by remember { mutableStateOf(true) }
     var cropTab by remember { mutableStateOf(CropTab.CROP) }
-    var hintDismissed by remember { mutableStateOf(false) }
+    var lightSub by remember { mutableStateOf("exposure") }
+    var colorSub by remember { mutableStateOf("temperature") }
+    var effectsSub by remember { mutableStateOf("clarity") }
+    var hslChannel by remember { mutableIntStateOf(0) }
+    var hslAttr by remember { mutableStateOf("hue") }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
         viewModel.openPhoto(uri)
@@ -147,51 +156,17 @@ fun EditorScreen(
         panelVisible = false
     }
     val onDiscardPanel: () -> Unit = {
-        viewModel.discardPanelSession()
+        if (selectedTool == EditorTool.PRESETS) {
+            // No Presets, o X volta à receita de antes do preset.
+            viewModel.clearPreset()
+        } else {
+            viewModel.discardPanelSession()
+        }
         panelVisible = false
     }
 
     Scaffold(
         modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text("Editor") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "Voltar"
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = { viewModel.undo() },
-                        enabled = state.canUndo
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Undo,
-                            contentDescription = "Desfazer"
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.redo() },
-                        enabled = state.canRedo
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Redo,
-                            contentDescription = "Refazer"
-                        )
-                    }
-                    TextButton(
-                        onClick = { showExportSheet = true },
-                        enabled = state.photoUri != null && !state.isExporting
-                    ) {
-                        Text("Exportar")
-                    }
-                }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
@@ -207,6 +182,14 @@ fun EditorScreen(
                         .background(MaterialTheme.colorScheme.surfaceContainerLowest),
                     contentAlignment = Alignment.Center
                 ) {
+                    FloatingPhotoButton(
+                        imageVector = Icons.Filled.ArrowBack,
+                        contentDescription = "Voltar",
+                        onClick = onBack,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(LumeSpacing.sm)
+                    )
                     if (state.isLoadingPhoto) {
                         CircularProgressIndicator()
                     } else {
@@ -254,7 +237,6 @@ fun EditorScreen(
                                 detectTapGestures(
                                     onPress = {
                                         showOriginal = true
-                                        hintDismissed = true
                                         try {
                                             awaitRelease()
                                         } finally {
@@ -377,32 +359,88 @@ fun EditorScreen(
                             }
                         )
                     }
-                    if (state.histogram.isNotEmpty() && selectedTool == EditorTool.LIGHT) {
-                        HistogramBars(
-                            values = state.histogram,
+                    // Controles flutuantes sobre a foto (v3): sem barra
+                    // de título, a foto manda. Com o painel aberto,
+                    // X/✓ nos cantos; com o painel recolhido, voltar +
+                    // desfazer/refazer + Exportar.
+                    if (panelVisible) {
+                        FloatingPhotoButton(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Descartar ajustes da ferramenta",
+                            onClick = onDiscardPanel,
                             modifier = Modifier
-                                .align(Alignment.BottomStart)
+                                .align(Alignment.TopStart)
                                 .padding(LumeSpacing.sm)
                         )
-                    }
-                    if (
-                        (!state.recipe.isIdentity() || !state.geometry.isIdentity()) &&
-                        !splitMode
-                    ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = MaterialTheme.shapes.small,
+                        FloatingPhotoButton(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Confirmar e fechar a ferramenta",
+                            onClick = onConfirmPanel,
                             modifier = Modifier
                                 .align(Alignment.TopEnd)
                                 .padding(LumeSpacing.sm)
+                        )
+                    } else {
+                        FloatingPhotoButton(
+                            imageVector = Icons.Filled.ArrowBack,
+                            contentDescription = "Voltar",
+                            onClick = onBack,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(LumeSpacing.sm)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(LumeSpacing.sm),
+                            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            FloatingPhotoButton(
+                                imageVector = Icons.Filled.Undo,
+                                contentDescription = "Desfazer",
+                                onClick = { viewModel.undo() },
+                                enabled = state.canUndo
+                            )
+                            FloatingPhotoButton(
+                                imageVector = Icons.Filled.Redo,
+                                contentDescription = "Refazer",
+                                onClick = { viewModel.redo() },
+                                enabled = state.canRedo
+                            )
+                            Button(
+                                onClick = { showExportSheet = true },
+                                enabled = !state.isExporting,
+                                contentPadding = PaddingValues(
+                                    horizontal = LumeSpacing.md,
+                                    vertical = 0.dp
+                                ),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Text("Exportar")
+                            }
+                        }
+                    }
+                    if (selectedTool == EditorTool.CROP && panelVisible) {
+                        // Medida do corte (ou da foto cheia) no topo.
+                        val crop = state.geometry.crop
+                        val cropWidth = crop?.width ?: 1f
+                        val cropHeight = crop?.height ?: 1f
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.65f),
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(LumeSpacing.sm)
                         ) {
                             Text(
-                                text = "EDITADA",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "${(cropWidth * photoWidth).roundToInt()} × " +
+                                    "${(cropHeight * photoHeight).roundToInt()}",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.padding(
-                                    horizontal = LumeSpacing.xs,
-                                    vertical = LumeSpacing.xxs
+                                    horizontal = LumeSpacing.sm,
+                                    vertical = LumeSpacing.xs
                                 )
                             )
                         }
@@ -434,25 +472,6 @@ fun EditorScreen(
                                     }
                                 )
                             }
-                        }
-                    }
-                    if (!hintDismissed && !splitMode && !cropOverlayVisible) {
-                        Surface(
-                            color = Color.Black.copy(alpha = 0.65f),
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .padding(LumeSpacing.sm)
-                        ) {
-                            Text(
-                                text = "Segure a foto para ver a original",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(
-                                    horizontal = LumeSpacing.sm,
-                                    vertical = LumeSpacing.xs
-                                )
-                            )
                         }
                     }
                     if (state.isExporting) {
@@ -501,28 +520,33 @@ fun EditorScreen(
                     when (selectedTool) {
                         EditorTool.LIGHT -> LightPanel(
                             recipe = state.recipe,
+                            histogram = state.histogram,
                             simpleMode = simpleMode,
                             onSimpleModeChange = { simpleMode = it },
+                            selectedSub = lightSub,
+                            onSubSelect = { lightSub = it },
                             onDraft = { viewModel.updateRecipeDraft(it) },
-                            onCommit = { viewModel.commitRecipe() },
-                            onConfirm = onConfirmPanel,
-                            onDiscard = onDiscardPanel
+                            onCommit = { viewModel.commitRecipe() }
                         )
                         EditorTool.COLOR -> ColorPanel(
                             recipe = state.recipe,
                             isPro = state.isPro,
+                            selectedSub = colorSub,
+                            onSubSelect = { colorSub = it },
+                            hslChannel = hslChannel,
+                            onHslChannelSelect = { hslChannel = it },
+                            hslAttr = hslAttr,
+                            onHslAttrSelect = { hslAttr = it },
                             onDraft = { viewModel.updateRecipeDraft(it) },
                             onCommit = { viewModel.commitRecipe() },
-                            onRequestPaywall = { viewModel.requestPaywall() },
-                            onConfirm = onConfirmPanel,
-                            onDiscard = onDiscardPanel
+                            onRequestPaywall = { viewModel.requestPaywall() }
                         )
                         EditorTool.EFFECTS -> EffectsPanel(
                             recipe = state.recipe,
+                            selectedSub = effectsSub,
+                            onSubSelect = { effectsSub = it },
                             onDraft = { viewModel.updateRecipeDraft(it) },
-                            onCommit = { viewModel.commitRecipe() },
-                            onConfirm = onConfirmPanel,
-                            onDiscard = onDiscardPanel
+                            onCommit = { viewModel.commitRecipe() }
                         )
                         EditorTool.CROP -> CropPanel(
                             geometry = state.geometry,
@@ -533,9 +557,7 @@ fun EditorScreen(
                             onGeometryChange = { viewModel.updateGeometry(it) },
                             onRatioSelect = { viewModel.setCropRatio(it) },
                             onRotate = { viewModel.rotateGeometry(it) },
-                            onFlip = { viewModel.flipGeometry(it) },
-                            onConfirm = onConfirmPanel,
-                            onDiscard = onDiscardPanel
+                            onFlip = { viewModel.flipGeometry(it) }
                         )
                         EditorTool.PRESETS -> PresetsPanel(
                             presets = state.presets,
@@ -557,11 +579,6 @@ fun EditorScreen(
                                 if (pick != null) {
                                     viewModel.applyPreset(pick)
                                 }
-                            },
-                            onConfirm = onConfirmPanel,
-                            onDiscard = {
-                                viewModel.clearPreset()
-                                panelVisible = false
                             }
                         )
                         EditorTool.HISTORY -> HistoryPanel(
@@ -629,6 +646,37 @@ fun EditorScreen(
                 }
             }
         )
+    }
+}
+
+/**
+ * Botão redondo translúcido sobre a foto (v3): 40.dp visuais, área
+ * de toque mínima do Material 3 por dentro.
+ */
+@Composable
+private fun FloatingPhotoButton(
+    imageVector: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color.Black.copy(alpha = 0.65f),
+        shape = MaterialTheme.shapes.small,
+        modifier = modifier.size(40.dp)
+    ) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Icon(
+                imageVector = imageVector,
+                contentDescription = contentDescription,
+                tint = Color.White.copy(alpha = if (enabled) 1f else 0.4f)
+            )
+        }
     }
 }
 

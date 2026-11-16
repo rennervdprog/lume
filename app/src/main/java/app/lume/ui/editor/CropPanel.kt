@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Flip
-import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -31,7 +30,6 @@ import app.lume.core.CropRatio
 import app.lume.core.Geometry
 import app.lume.core.formatDegrees
 import app.lume.ui.theme.LumeSpacing
-import kotlin.math.roundToInt
 
 enum class CropTab {
     CROP, STRAIGHTEN, ROTATE
@@ -56,8 +54,6 @@ internal fun CropPanel(
     onRatioSelect: (CropRatio) -> Unit,
     onRotate: (Int) -> Unit,
     onFlip: (Boolean) -> Unit,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -99,24 +95,11 @@ internal fun CropPanel(
                         )
                     }
                 }
-                val crop = geometry.crop
-                if (crop != null && !crop.isFull() && photoWidth > 0 && photoHeight > 0) {
-                    Text(
-                        text = "${(crop.width * photoWidth).roundToInt()} × " +
-                            "${(crop.height * photoHeight).roundToInt()}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text(
-                    text = "Arraste as bordas da moldura na foto para ajustar " +
-                        "o corte, ou arraste o meio para mover.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                // A medida do corte (ex.: 899 × 1599) vive na pílula
+                // sobre a foto, não aqui.
             }
             CropTab.STRAIGHTEN -> {
-                LumeSliderRow(
+                SlimSliderRow(
                     label = "Endireitar",
                     value = geometry.straightenDegrees,
                     valueRange = -Geometry.MAX_STRAIGHTEN..Geometry.MAX_STRAIGHTEN,
@@ -125,12 +108,10 @@ internal fun CropPanel(
                     },
                     onValueChangeFinished = {},
                     formatValue = ::formatDegrees,
-                    icon = Icons.Filled.Straighten,
                     onReset = { onGeometryChange(geometry.copy(straightenDegrees = 0f)) }
                 )
                 Text(
-                    text = "Endireitar corta as bordas para não deixar " +
-                        "cantos vazios.",
+                    text = "Corta as bordas para não deixar cantos vazios.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -174,7 +155,6 @@ internal fun CropPanel(
                 }
             }
         }
-        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
     }
 }
 

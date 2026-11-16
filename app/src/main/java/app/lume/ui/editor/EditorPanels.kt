@@ -5,7 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,67 +13,48 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.BrightnessLow
-import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.Crop
-import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.Grain
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Style
-import androidx.compose.material.icons.filled.Thermostat
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -163,260 +144,142 @@ internal fun EditorToolRail(
 }
 
 /**
- * Linha X/✓ no fim do painel: ✕ descarta os ajustes da ferramenta
- * (volta ao estado da abertura da ferramenta), ✓ confirma e recolhe
- * o painel, deixando a foto grande.
+ * Painel Luz (v3): tirinha de histograma + UM slider fino do
+ * sub-controle selecionado + fileira de sub-ferramentas rolável.
+ * O X/✓ vive nos botões flutuantes sobre a foto, não aqui.
  */
-@Composable
-internal fun ConfirmRow(
-    onDiscard: () -> Unit,
-    onConfirm: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(
-            onClick = onDiscard,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = "Descartar ajustes da ferramenta"
-            )
-        }
-        FilledIconButton(
-            onClick = onConfirm,
-            modifier = Modifier.size(48.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Check,
-                contentDescription = "Confirmar e fechar a ferramenta"
-            )
-        }
-    }
-}
-
-/**
- * Linha de slider: ícone, rótulo, ponto de "alterado", pílula de valor.
- * Toque duplo no rótulo zera o controle (quando [onReset] existe).
- */
-@Composable
-internal fun LumeSliderRow(
-    label: String,
-    value: Float,
-    valueRange: ClosedFloatingPointRange<Float>,
-    onValueChange: (Float) -> Unit,
-    onValueChangeFinished: () -> Unit,
-    formatValue: (Float) -> String,
-    icon: ImageVector? = null,
-    defaultValue: Float = 0f,
-    onReset: (() -> Unit)? = null,
-    modifier: Modifier = Modifier
-) {
-    val changed = value != defaultValue
-    Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (icon != null) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .weight(1f)
-                    .pointerInput(Unit) {
-                        detectTapGestures(onDoubleTap = { onReset?.invoke() })
-                    }
-            )
-            if (changed) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-            }
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                shape = MaterialTheme.shapes.small
-            ) {
-                Text(
-                    text = formatValue(value),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (changed) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.padding(
-                        horizontal = LumeSpacing.xs,
-                        vertical = LumeSpacing.xxs
-                    )
-                )
-            }
-        }
-        Slider(
-            value = value,
-            onValueChange = onValueChange,
-            onValueChangeFinished = onValueChangeFinished,
-            valueRange = valueRange,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
 
 @Composable
 internal fun LightPanel(
     recipe: Recipe,
+    histogram: List<Float>,
     simpleMode: Boolean,
     onSimpleModeChange: (Boolean) -> Unit,
+    selectedSub: String,
+    onSubSelect: (String) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Simples: 4 controles sobre a MESMA receita. Nada se perde ao
+    // trocar para o modo Pro — só a densidade muda.
+    val options = if (simpleMode) {
+        listOf(
+            "exposure" to "Luz",
+            "saturation" to "Cor",
+            "temperature" to "Calor",
+            "contrast" to "Clima"
+        )
+    } else {
+        listOf(
+            "exposure" to "Exposição",
+            "contrast" to "Contraste",
+            "highlights" to "Realces",
+            "shadows" to "Sombras",
+            "whites" to "Brancos",
+            "blacks" to "Pretos",
+            "curve" to "Curva"
+        )
+    }
+    val effectiveSub = if (options.any { it.first == selectedSub }) {
+        selectedSub
+    } else {
+        options.first().first
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Luz",
-                style = MaterialTheme.typography.titleSmall
-            )
-            MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
-        }
-        if (simpleMode) {
-            // Simples: 4 controles sobre a MESMA receita. Nada se perde
-            // ao trocar para o modo Pro — só a densidade muda.
-            LumeSliderRow(
-                label = "Luz",
+        HistogramStrip(values = histogram)
+        when (effectiveSub) {
+            "exposure" -> SlimSliderRow(
+                label = if (simpleMode) "Luz" else "Exposição",
                 value = recipe.exposure,
                 valueRange = -2f..2f,
                 onValueChange = { onDraft(recipe.copy(exposure = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatExposure,
-                icon = Icons.Filled.WbSunny,
                 onReset = { onDraft(recipe.copy(exposure = 0f)); onCommit() }
             )
-            LumeSliderRow(
+            "saturation" -> SlimSliderRow(
                 label = "Cor",
                 value = recipe.saturation,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(saturation = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.Palette,
                 onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
             )
-            LumeSliderRow(
+            "temperature" -> SlimSliderRow(
                 label = "Calor",
                 value = recipe.temperature,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(temperature = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.Thermostat,
                 onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() }
             )
-            LumeSliderRow(
-                label = "Clima",
+            "contrast" -> SlimSliderRow(
+                label = if (simpleMode) "Clima" else "Contraste",
                 value = recipe.contrast,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(contrast = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.Contrast,
                 onReset = { onDraft(recipe.copy(contrast = 0f)); onCommit() }
             )
-        } else {
-            LumeSliderRow(
-                label = "Exposição",
-                value = recipe.exposure,
-                valueRange = -2f..2f,
-                onValueChange = { onDraft(recipe.copy(exposure = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatExposure,
-                icon = Icons.Filled.WbSunny,
-                onReset = { onDraft(recipe.copy(exposure = 0f)); onCommit() }
-            )
-            LumeSliderRow(
-                label = "Contraste",
-                value = recipe.contrast,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(contrast = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                icon = Icons.Filled.Contrast,
-                onReset = { onDraft(recipe.copy(contrast = 0f)); onCommit() }
-            )
-            LumeSliderRow(
+            "highlights" -> SlimSliderRow(
                 label = "Realces",
                 value = recipe.highlights,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(highlights = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.BrightnessHigh,
                 onReset = { onDraft(recipe.copy(highlights = 0f)); onCommit() }
             )
-            LumeSliderRow(
+            "shadows" -> SlimSliderRow(
                 label = "Sombras",
                 value = recipe.shadows,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(shadows = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.BrightnessLow,
                 onReset = { onDraft(recipe.copy(shadows = 0f)); onCommit() }
             )
-            LumeSliderRow(
+            "whites" -> SlimSliderRow(
                 label = "Brancos",
                 value = recipe.whites,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(whites = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.LightMode,
                 onReset = { onDraft(recipe.copy(whites = 0f)); onCommit() }
             )
-            LumeSliderRow(
+            "blacks" -> SlimSliderRow(
                 label = "Pretos",
                 value = recipe.blacks,
                 valueRange = -100f..100f,
                 onValueChange = { onDraft(recipe.copy(blacks = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
-                icon = Icons.Filled.DarkMode,
                 onReset = { onDraft(recipe.copy(blacks = 0f)); onCommit() }
             )
-            CurveSection(
+            "curve" -> CurveSection(
                 recipe = recipe,
                 onDraft = onDraft,
                 onCommit = onCommit
             )
         }
-        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
+        SubToolStrip(
+            options = options,
+            selectedId = effectiveSub,
+            onSelect = onSubSelect,
+            trailing = {
+                MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
+            }
+        )
     }
 }
 
@@ -507,15 +370,10 @@ internal fun CurveSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        Text(
-            text = "Curva de tons",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(96.dp)
+                .height(64.dp)
                 .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
@@ -541,6 +399,7 @@ internal fun CurveSection(
             )
         }
         Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
         ) {
             curveChips.forEach { (name, points) ->
@@ -583,23 +442,27 @@ private val HslDotColors: List<Color> = listOf(
 )
 
 /**
- * HSL por cor: fileira de pontos (um por canal) + 3 sliders do canal
- * selecionado. Os 4 primeiros canais são grátis; os outros 4 mostram
- * cadeado e abrem o paywall (regra em [ProPolicy]). O seletor "toque
- * na foto" (Pro) chega com o conta-gotas, na próxima entrega.
+ * HSL por cor (v3): fileira de pontos (um por canal) + chips
+ * Matiz/Saturação/Luminância + UM slider fino do atributo
+ * selecionado. Os 4 primeiros canais são grátis; os outros 4
+ * mostram cadeado e abrem o paywall (regra em [ProPolicy]). O
+ * seletor "toque na foto" (Pro) chega com o conta-gotas.
  */
 @Composable
 internal fun HslSection(
     recipe: Recipe,
     isPro: Boolean,
+    selectedChannel: Int,
+    onChannelSelect: (Int) -> Unit,
+    selectedAttr: String,
+    onAttrSelect: (String) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
     onRequestPaywall: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selected by remember { mutableIntStateOf(0) }
     val channels = HslChannels.normalize(recipe.hsl)
-    val channel = channels[selected]
+    val channel = channels[selectedChannel]
     fun updateChannel(index: Int, updated: HslChannel): Recipe {
         val list = channels.toMutableList()
         list[index] = updated
@@ -609,18 +472,13 @@ internal fun HslSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        Text(
-            text = "HSL por cor",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
-        )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             channels.indices.forEach { index ->
                 val locked = !ProPolicy.hslChannelUnlocked(index, isPro)
-                val isSelected = index == selected
+                val isSelected = index == selectedChannel
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -644,7 +502,7 @@ internal fun HslSection(
                             if (locked) {
                                 onRequestPaywall()
                             } else {
-                                selected = index
+                                onChannelSelect(index)
                             }
                         }
                 ) {
@@ -659,46 +517,53 @@ internal fun HslSection(
                 }
             }
         }
-        Text(
-            text = HslChannels.NAMES[selected],
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        LumeSliderRow(
-            label = "Matiz",
-            value = channel.hue,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(
+                LumeSpacing.xs,
+                Alignment.CenterHorizontally
+            )
+        ) {
+            listOf(
+                "hue" to "Matiz",
+                "saturation" to "Saturação",
+                "luminance" to "Luminância"
+            ).forEach { (id, label) ->
+                FilterChip(
+                    selected = selectedAttr == id,
+                    onClick = { onAttrSelect(id) },
+                    label = { Text(label) }
+                )
+            }
+        }
+        val attrLabel: String
+        val attrValue: Float
+        val attrUpdate: (Float) -> Recipe
+        when (selectedAttr) {
+            "saturation" -> {
+                attrLabel = "Saturação"
+                attrValue = channel.saturation
+                attrUpdate = { updateChannel(selectedChannel, channel.copy(saturation = it)) }
+            }
+            "luminance" -> {
+                attrLabel = "Luminância"
+                attrValue = channel.luminance
+                attrUpdate = { updateChannel(selectedChannel, channel.copy(luminance = it)) }
+            }
+            else -> {
+                attrLabel = "Matiz"
+                attrValue = channel.hue
+                attrUpdate = { updateChannel(selectedChannel, channel.copy(hue = it)) }
+            }
+        }
+        SlimSliderRow(
+            label = "${HslChannels.NAMES[selectedChannel]} · $attrLabel",
+            value = attrValue,
             valueRange = -100f..100f,
-            onValueChange = { onDraft(updateChannel(selected, channel.copy(hue = it))) },
+            onValueChange = { onDraft(attrUpdate(it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = {
-                onDraft(updateChannel(selected, channel.copy(hue = 0f)))
-                onCommit()
-            }
-        )
-        LumeSliderRow(
-            label = "Saturação",
-            value = channel.saturation,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(updateChannel(selected, channel.copy(saturation = it))) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            onReset = {
-                onDraft(updateChannel(selected, channel.copy(saturation = 0f)))
-                onCommit()
-            }
-        )
-        LumeSliderRow(
-            label = "Luminância",
-            value = channel.luminance,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(updateChannel(selected, channel.copy(luminance = it))) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            onReset = {
-                onDraft(updateChannel(selected, channel.copy(luminance = 0f)))
-                onCommit()
-            }
+            onReset = { onDraft(attrUpdate(0f)); onCommit() }
         )
     }
 }
@@ -707,71 +572,92 @@ internal fun HslSection(
 internal fun ColorPanel(
     recipe: Recipe,
     isPro: Boolean,
+    selectedSub: String,
+    onSubSelect: (String) -> Unit,
+    hslChannel: Int,
+    onHslChannelSelect: (Int) -> Unit,
+    hslAttr: String,
+    onHslAttrSelect: (String) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
     onRequestPaywall: () -> Unit,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val options = listOf(
+        "temperature" to "Temperatura",
+        "tint" to "Matiz",
+        "vibrance" to "Vibração",
+        "saturation" to "Saturação",
+        "hsl" to "HSL"
+    )
+    val effectiveSub = if (options.any { it.first == selectedSub }) {
+        selectedSub
+    } else {
+        options.first().first
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        HslSection(
-            recipe = recipe,
-            isPro = isPro,
-            onDraft = onDraft,
-            onCommit = onCommit,
-            onRequestPaywall = onRequestPaywall
+        if (effectiveSub == "hsl") {
+            HslSection(
+                recipe = recipe,
+                isPro = isPro,
+                selectedChannel = hslChannel,
+                onChannelSelect = onHslChannelSelect,
+                selectedAttr = hslAttr,
+                onAttrSelect = onHslAttrSelect,
+                onDraft = onDraft,
+                onCommit = onCommit,
+                onRequestPaywall = onRequestPaywall
+            )
+        } else {
+            when (effectiveSub) {
+                "temperature" -> SlimSliderRow(
+                    label = "Temperatura",
+                    value = recipe.temperature,
+                    valueRange = -100f..100f,
+                    onValueChange = { onDraft(recipe.copy(temperature = it)) },
+                    onValueChangeFinished = onCommit,
+                    formatValue = ::formatSigned,
+                    onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() }
+                )
+                "tint" -> SlimSliderRow(
+                    label = "Matiz",
+                    value = recipe.tint,
+                    valueRange = -100f..100f,
+                    onValueChange = { onDraft(recipe.copy(tint = it)) },
+                    onValueChangeFinished = onCommit,
+                    formatValue = ::formatSigned,
+                    onReset = { onDraft(recipe.copy(tint = 0f)); onCommit() }
+                )
+                "vibrance" -> SlimSliderRow(
+                    label = "Vibração",
+                    value = recipe.vibrance,
+                    valueRange = -100f..100f,
+                    onValueChange = { onDraft(recipe.copy(vibrance = it)) },
+                    onValueChangeFinished = onCommit,
+                    formatValue = ::formatSigned,
+                    onReset = { onDraft(recipe.copy(vibrance = 0f)); onCommit() }
+                )
+                "saturation" -> SlimSliderRow(
+                    label = "Saturação",
+                    value = recipe.saturation,
+                    valueRange = -100f..100f,
+                    onValueChange = { onDraft(recipe.copy(saturation = it)) },
+                    onValueChangeFinished = onCommit,
+                    formatValue = ::formatSigned,
+                    onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
+                )
+            }
+        }
+        SubToolStrip(
+            options = options,
+            selectedId = effectiveSub,
+            onSelect = onSubSelect
         )
-        Text(
-            text = "Global",
-            style = MaterialTheme.typography.titleSmall
-        )
-        LumeSliderRow(
-            label = "Temperatura",
-            value = recipe.temperature,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(temperature = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.Thermostat,
-            onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() }
-        )
-        LumeSliderRow(
-            label = "Matiz",
-            value = recipe.tint,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(tint = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.ColorLens,
-            onReset = { onDraft(recipe.copy(tint = 0f)); onCommit() }
-        )
-        LumeSliderRow(
-            label = "Vibração",
-            value = recipe.vibrance,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(vibrance = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.WaterDrop,
-            onReset = { onDraft(recipe.copy(vibrance = 0f)); onCommit() }
-        )
-        LumeSliderRow(
-            label = "Saturação",
-            value = recipe.saturation,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(saturation = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.Palette,
-            onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
-        )
-        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
     }
 }
 
@@ -782,59 +668,72 @@ internal fun ColorPanel(
 @Composable
 internal fun EffectsPanel(
     recipe: Recipe,
+    selectedSub: String,
+    onSubSelect: (String) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val options = listOf(
+        "clarity" to "Claridade",
+        "vignette" to "Vinheta",
+        "grain" to "Grão",
+        "fade" to "Desbotado"
+    )
+    val effectiveSub = if (options.any { it.first == selectedSub }) {
+        selectedSub
+    } else {
+        options.first().first
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        LumeSliderRow(
-            label = "Claridade",
-            value = recipe.clarity,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(clarity = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.Tune,
-            onReset = { onDraft(recipe.copy(clarity = 0f)); onCommit() }
+        when (effectiveSub) {
+            "clarity" -> SlimSliderRow(
+                label = "Claridade",
+                value = recipe.clarity,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(clarity = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(clarity = 0f)); onCommit() }
+            )
+            "vignette" -> SlimSliderRow(
+                label = "Vinheta",
+                value = recipe.vignette,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(vignette = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(vignette = 0f)); onCommit() }
+            )
+            "grain" -> SlimSliderRow(
+                label = "Grão",
+                value = recipe.grain,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(grain = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(grain = 0f)); onCommit() }
+            )
+            "fade" -> SlimSliderRow(
+                label = "Desbotado",
+                value = recipe.fade,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(fade = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(fade = 0f)); onCommit() }
+            )
+        }
+        SubToolStrip(
+            options = options,
+            selectedId = effectiveSub,
+            onSelect = onSubSelect
         )
-        LumeSliderRow(
-            label = "Vinheta",
-            value = recipe.vignette,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(vignette = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.CenterFocusStrong,
-            onReset = { onDraft(recipe.copy(vignette = 0f)); onCommit() }
-        )
-        LumeSliderRow(
-            label = "Grão",
-            value = recipe.grain,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(grain = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.Grain,
-            onReset = { onDraft(recipe.copy(grain = 0f)); onCommit() }
-        )
-        LumeSliderRow(
-            label = "Desbotado",
-            value = recipe.fade,
-            valueRange = -100f..100f,
-            onValueChange = { onDraft(recipe.copy(fade = it)) },
-            onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            icon = Icons.Filled.Opacity,
-            onReset = { onDraft(recipe.copy(fade = 0f)); onCommit() }
-        )
-        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
     }
 }
 
@@ -947,6 +846,15 @@ internal fun HistoryPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
+            // A pilha rola por dentro, com teto: o painel não pode
+            // crescer e roubar a foto quando há muitos passos.
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 200.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+            ) {
             if (hasGeometry) {
                 // O corte vive na foto já girada: o resumo usa as
                 // dimensões giradas.
@@ -1008,6 +916,7 @@ internal fun HistoryPanel(
                     }
                 }
             }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1037,23 +946,66 @@ internal fun PresetsPanel(
     onSavePresetClick: () -> Unit,
     onSharePresetClick: (Preset) -> Unit,
     onShuffleClick: () -> Unit,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
+    var selectedCollection by remember(presets) { mutableStateOf<String?>(null) }
+    val collections = remember(presets) {
+        presets.map { it.collection }.distinct()
+    }
+    val visiblePresets = if (selectedCollection == null) {
+        presets
+    } else {
+        presets.filter { it.collection == selectedCollection }
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+        verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = LumeSpacing.md),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            LazyRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+            ) {
+                item {
+                    FilterChip(
+                        selected = selectedCollection == null,
+                        onClick = { selectedCollection = null },
+                        label = { Text("Todos") }
+                    )
+                }
+                items(collections) { collection ->
+                    FilterChip(
+                        selected = selectedCollection == collection,
+                        onClick = { selectedCollection = collection },
+                        label = { Text(collection) }
+                    )
+                }
+            }
+            TextButton(onClick = onShuffleClick) {
+                Text("Embaralhar")
+            }
+            if (appliedPreset != null) {
+                TextButton(onClick = { onSharePresetClick(appliedPreset) }) {
+                    Text("QR")
+                }
+            }
+            TextButton(onClick = onSavePresetClick) {
+                Text("Salvar")
+            }
+        }
         LazyRow(
             contentPadding = PaddingValues(horizontal = LumeSpacing.md),
             horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
         ) {
             item {
-                PresetThumbCard(
+                PresetThumbSquare(
                     label = "Original",
-                    sublabel = "Sem preset",
                     selected = appliedPresetName == null,
                     onClick = onClearPreset
                 ) {
@@ -1062,14 +1014,12 @@ internal fun PresetsPanel(
                             bitmap = preview,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(64.dp)
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
             }
-            items(items = presets, key = { it.id }) { preset ->
+            items(items = visiblePresets, key = { it.id }) { preset ->
                 val selected = preset.name == appliedPresetName
                 // Miniatura rápida pela matriz (aproximação v1): HSL,
                 // curva e efeitos do preset só aparecem na foto grande
@@ -1080,9 +1030,8 @@ internal fun PresetsPanel(
                         ColorMatrix(RecipeColorMatrix.values(preset.recipe))
                     )
                 }
-                PresetThumbCard(
+                PresetThumbSquare(
                     label = preset.name,
-                    sublabel = preset.collection,
                     selected = selected,
                     onClick = { onApplyPreset(preset) }
                 ) {
@@ -1092,130 +1041,76 @@ internal fun PresetsPanel(
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             colorFilter = filter,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(64.dp)
+                            modifier = Modifier.fillMaxSize()
                         )
                     } else {
                         PresetSwatch(
                             preset = preset,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(64.dp)
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
             }
         }
         if (appliedPreset != null) {
-            Column(modifier = Modifier.padding(horizontal = LumeSpacing.md)) {
-                LumeSliderRow(
-                    label = "Intensidade de \"${appliedPreset.name}\"",
-                    value = presetIntensity * 100f,
-                    valueRange = 0f..100f,
-                    onValueChange = { onIntensityChange(it / 100f) },
-                    onValueChangeFinished = onIntensityFinished,
-                    formatValue = { "${it.roundToInt()}%" }
-                )
-            }
-            PresetRecipeStack(
-                preset = appliedPreset,
+            SlimSliderRow(
+                label = "Intensidade",
+                value = presetIntensity * 100f,
+                valueRange = 0f..100f,
+                onValueChange = { onIntensityChange(it / 100f) },
+                onValueChangeFinished = onIntensityFinished,
+                formatValue = { "${it.roundToInt()}%" },
                 modifier = Modifier.padding(horizontal = LumeSpacing.md)
             )
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = LumeSpacing.md),
-                horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
-            ) {
-                OutlinedButton(onClick = onShuffleClick) {
-                    Icon(
-                        imageVector = Icons.Filled.Shuffle,
-                        contentDescription = null
-                    )
-                    Text("Embaralhar")
-                }
-                OutlinedButton(onClick = { onSharePresetClick(appliedPreset) }) {
-                    Icon(
-                        imageVector = Icons.Filled.QrCode2,
-                        contentDescription = null
-                    )
-                    Text("Compartilhar")
-                }
-            }
-        } else {
-            Row(modifier = Modifier.padding(horizontal = LumeSpacing.md)) {
-                OutlinedButton(onClick = onShuffleClick) {
-                    Icon(
-                        imageVector = Icons.Filled.Shuffle,
-                        contentDescription = null
-                    )
-                    Text("Embaralhar preset")
-                }
-            }
         }
-        Row(modifier = Modifier.padding(horizontal = LumeSpacing.md)) {
-            OutlinedButton(onClick = onSavePresetClick) {
-                Text("Salvar ajustes como preset")
-            }
-        }
-        ConfirmRow(
-            onDiscard = onDiscard,
-            onConfirm = onConfirm,
-            modifier = Modifier.padding(horizontal = LumeSpacing.md)
-        )
     }
 }
 
 @Composable
-private fun PresetThumbCard(
+private fun PresetThumbSquare(
     label: String,
-    sublabel: String,
     selected: Boolean,
     onClick: () -> Unit,
     thumbnail: @Composable () -> Unit
 ) {
-    Card(
-        onClick = onClick,
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            }
-        ),
-        modifier = Modifier.width(104.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(72.dp)
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
     ) {
-        Column {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-            ) {
-                thumbnail()
-            }
-            Column(modifier = Modifier.padding(LumeSpacing.xs)) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .then(
+                    if (selected) {
+                        Modifier.border(
+                            2.dp,
+                            MaterialTheme.colorScheme.primary,
+                            RoundedCornerShape(12.dp)
+                        )
                     } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                        Modifier
+                    }
                 )
-                Text(
-                    text = sublabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+        ) {
+            thumbnail()
         }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = LumeSpacing.xxs)
+        )
     }
 }
 
@@ -1273,32 +1168,6 @@ internal fun PresetRecipeStack(preset: Preset, modifier: Modifier = Modifier) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
-    }
-}
-
-/** Histograma de luminância (valores 0..1, já normalizados). */
-@Composable
-internal fun HistogramBars(values: List<Float>, modifier: Modifier = Modifier) {
-    Canvas(modifier = modifier.size(120.dp, 36.dp)) {
-        drawRoundRect(
-            color = Color.Black.copy(alpha = 0.45f),
-            size = size,
-            cornerRadius = CornerRadius(8.dp.toPx())
-        )
-        if (values.isEmpty()) return@Canvas
-        val barWidth = size.width / values.size
-        val padding = 4.dp.toPx()
-        values.forEachIndexed { index, value ->
-            val barHeight = (size.height - padding * 2) * value.coerceIn(0f, 1f)
-            drawRect(
-                color = Color.White.copy(alpha = 0.85f),
-                topLeft = Offset(
-                    index * barWidth + 1f,
-                    size.height - padding - barHeight
-                ),
-                size = Size((barWidth - 2f).coerceAtLeast(1f), barHeight)
-            )
         }
     }
 }

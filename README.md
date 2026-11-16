@@ -1,4 +1,4 @@
-# Lume — editor de fotos (Fase 1, motor + geometria)
+# Lume — editor de fotos (Fase 1, motor + geometria + editor v3)
 
 > **Nome provisório.** "Lume" e o `applicationId` `app.lume` vieram do
 > protótipo visual e **não são decisão de marca**. Decidir nome final,
@@ -18,7 +18,8 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até o motor (0.3.0).** O Gradle não roda nesta VM (daemon
+verde até o redesign do Editor (0.4.0).** Editor v3 (0.5.0) escrito,
+aguardando CI + veredito no aparelho. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários). Nada neste
 README afirma que o app roda — afirma o que foi escrito e o que foi
@@ -40,12 +41,16 @@ verificado (estático + CI + teste no aparelho).
   corte com moldura arrastável + proporções prontas. Aplica-se DEPOIS
   da cor, igual no preview e na exportação. Vive só na sessão
   (rascunhos guardam só a receita — persistência chega com migração).
-- **Editor redesenhado** (ergonomia aprovada em preview): foto grande
-  de borda a borda, uma fileira de ferramentas, sliders só da
-  ferramenta ativa, X/✓ por ferramenta (descarta/confirma e recolhe),
-  segurar para comparar + botão de dividir, histograma pequeno só em
-  Luz, Simples/Pro como segmento pequeno no painel Luz, Copiar edição
-  no Histórico.
+- **Editor v3** (ergonomia aprovada em preview, após duas rejeições
+  no aparelho): sem barra de título — a foto ocupa ~70% da tela; X/✓
+  flutuando nos cantos superiores quando o painel está aberto, e
+  voltar + desfazer/refazer + Exportar quando recolhido; UM slider
+  fino por vez + fileira de sub-ferramentas rolável (Luz/Cor/Efeitos);
+  histograma como tirinha fina acima do slider, só no Luz; HSL com
+  pontos de cor + chips Matiz/Saturação/Luminância + um slider; medida
+  do corte em pílula no topo da foto; presets em miniaturas quadradas
+  com a foto; Biblioteca com os cartões de preset sobre a foto do
+  primeiro rascunho (reserva: amostra de cores, sem rascunho).
 - **Painéis Luz, Cor, Efeitos e Presets** sobre a receita: sliders de
   luz/cor, HSL por cor (4 canais grátis, 8 Pro), chips de curva tonal,
   claridade/vinheta/grão/desbotado, trilho de ferramentas, histograma,
