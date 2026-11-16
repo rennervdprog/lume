@@ -15,7 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -26,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Undo
@@ -33,16 +34,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -80,8 +78,6 @@ import app.lume.ui.components.rememberPhotoPickerLauncher
 import app.lume.ui.theme.LumeSpacing
 import kotlinx.coroutines.launch
 
-private enum class CompareMode { HOLD, SPLIT }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -96,12 +92,15 @@ fun EditorScreen(
     val context = LocalContext.current
     var selectedTool by remember { mutableStateOf(EditorTool.LIGHT) }
     var simpleMode by remember { mutableStateOf(true) }
-    var compareMode by remember { mutableStateOf(CompareMode.HOLD) }
+    var splitMode by remember { mutableStateOf(false) }
     var splitFraction by remember { mutableFloatStateOf(0.5f) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
     var qrPreset by remember { mutableStateOf<Preset?>(null) }
     var showOriginal by remember { mutableStateOf(false) }
+    var panelVisible by remember { mutableStateOf(true) }
+    var cropTab by remember { mutableStateOf(CropTab.CROP) }
+    var hintDismissed by remember { mutableStateOf(false) }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
         viewModel.openPhoto(uri)
@@ -118,6 +117,38 @@ fun EditorScreen(
             viewModel.consumePaywallRequest()
             onOpenPaywall()
         }
+    }
+
+    // Abrir uma ferramenta marca a base do X/✓.
+    LaunchedEffect(selectedTool) {
+        viewModel.beginPanelSession()
+    }
+
+    // A moldura do Cortar só existe com o painel aberto na aba CORTAR:
+    // o render suspende o corte e a moldura mostra o corte sobre a
+    // foto cheia. Fora daqui, o render aplica a geometria completa.
+    val cropOverlayVisible = selectedTool == EditorTool.CROP &&
+        cropTab == CropTab.CROP && panelVisible && state.preview != null
+    LaunchedEffect(cropOverlayVisible) {
+        viewModel.setCropPreviewMode(cropOverlayVisible)
+    }
+
+    // Dimensões da foto já girada (o espaço onde o corte vive), para
+    // a moldura, as proporções e o resumo da pilha de edição.
+    val previewBitmap = state.preview
+    val (photoWidth, photoHeight) = if (previewBitmap != null) {
+        state.geometry.rotatedSize(previewBitmap.width, previewBitmap.height)
+    } else {
+        0 to 0
+    }
+
+    val onConfirmPanel: () -> Unit = {
+        viewModel.confirmPanelSession()
+        panelVisible = false
+    }
+    val onDiscardPanel: () -> Unit = {
+        viewModel.discardPanelSession()
+        panelVisible = false
     }
 
     Scaffold(
@@ -214,11 +245,16 @@ fun EditorScreen(
                         .fillMaxWidth()
                         .weight(1f)
                         .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                        .pointerInput(compareMode) {
-                            if (compareMode == CompareMode.HOLD) {
+                        .pointerInput(splitMode, cropOverlayVisible) {
+                            if (cropOverlayVisible) {
+                                // A moldura é dona dos gestos na foto.
+                                return@pointerInput
+                            }
+                            if (!splitMode) {
                                 detectTapGestures(
                                     onPress = {
                                         showOriginal = true
+                                        hintDismissed = true
                                         try {
                                             awaitRelease()
                                         } finally {
@@ -236,7 +272,7 @@ fun EditorScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     if (preview != null && edited != null) {
-                        if (compareMode == CompareMode.SPLIT) {
+                        if (splitMode) {
                             Image(
                                 bitmap = preview,
                                 contentDescription = "Foto em edição, lado esquerdo original.",
@@ -329,38 +365,19 @@ fun EditorScreen(
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.fillMaxSize()
                             )
-                            Surface(
-                                color = Color.Black.copy(alpha = 0.65f),
-                                shape = MaterialTheme.shapes.small,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(LumeSpacing.sm)
-                                    .pointerInput(Unit) {
-                                        detectTapGestures(
-                                            onPress = {
-                                                showOriginal = true
-                                                try {
-                                                    awaitRelease()
-                                                } finally {
-                                                    showOriginal = false
-                                                }
-                                            }
-                                        )
-                                    }
-                            ) {
-                                Text(
-                                    text = if (showOriginal) "Original" else "Segure: original",
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(
-                                        horizontal = LumeSpacing.sm,
-                                        vertical = LumeSpacing.xs
-                                    )
-                                )
-                            }
                         }
                     }
-                    if (state.histogram.isNotEmpty()) {
+                    if (cropOverlayVisible) {
+                        CropOverlay(
+                            bitmapWidth = photoWidth,
+                            bitmapHeight = photoHeight,
+                            geometry = state.geometry,
+                            onCropChange = {
+                                viewModel.updateGeometry(state.geometry.copy(crop = it))
+                            }
+                        )
+                    }
+                    if (state.histogram.isNotEmpty() && selectedTool == EditorTool.LIGHT) {
                         HistogramBars(
                             values = state.histogram,
                             modifier = Modifier
@@ -368,7 +385,10 @@ fun EditorScreen(
                                 .padding(LumeSpacing.sm)
                         )
                     }
-                    if (!state.recipe.isIdentity() && compareMode == CompareMode.HOLD) {
+                    if (
+                        (!state.recipe.isIdentity() || !state.geometry.isIdentity()) &&
+                        !splitMode
+                    ) {
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
                             shape = MaterialTheme.shapes.small,
@@ -387,23 +407,58 @@ fun EditorScreen(
                             )
                         }
                     }
+                    if (!cropOverlayVisible) {
+                        Surface(
+                            color = if (splitMode) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Black.copy(alpha = 0.65f)
+                            },
+                            shape = CircleShape,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(LumeSpacing.sm)
+                        ) {
+                            IconButton(onClick = { splitMode = !splitMode }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Compare,
+                                    contentDescription = if (splitMode) {
+                                        "Voltar a segurar para comparar"
+                                    } else {
+                                        "Dividir antes e depois"
+                                    },
+                                    tint = if (splitMode) {
+                                        MaterialTheme.colorScheme.onPrimary
+                                    } else {
+                                        Color.White
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    if (!hintDismissed && !splitMode && !cropOverlayVisible) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.65f),
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(LumeSpacing.sm)
+                        ) {
+                            Text(
+                                text = "Segure a foto para ver a original",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(
+                                    horizontal = LumeSpacing.sm,
+                                    vertical = LumeSpacing.xs
+                                )
+                            )
+                        }
+                    }
                     if (state.isExporting) {
                         CircularProgressIndicator()
                     }
                 }
-                Text(
-                    text = if (compareMode == CompareMode.SPLIT) {
-                        "Arraste o divisor para comparar antes e depois."
-                    } else {
-                        "Segure a foto para comparar com a original."
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = LumeSpacing.xs)
-                )
                 val exportedUri = state.exportedUri
                 if (exportedUri != null) {
                     Row(
@@ -435,139 +490,107 @@ fun EditorScreen(
                 }
             }
 
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = LumeSpacing.md, vertical = LumeSpacing.xs)
-            ) {
-                SegmentedButton(
-                    selected = compareMode == CompareMode.HOLD,
-                    onClick = { compareMode = CompareMode.HOLD },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    label = { Text("Segurar") }
-                )
-                SegmentedButton(
-                    selected = compareMode == CompareMode.SPLIT,
-                    onClick = { compareMode = CompareMode.SPLIT },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    label = { Text("Dividir") }
-                )
+            if (panelVisible) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = LumeSpacing.sm)
+                ) {
+                    when (selectedTool) {
+                        EditorTool.LIGHT -> LightPanel(
+                            recipe = state.recipe,
+                            simpleMode = simpleMode,
+                            onSimpleModeChange = { simpleMode = it },
+                            onDraft = { viewModel.updateRecipeDraft(it) },
+                            onCommit = { viewModel.commitRecipe() },
+                            onConfirm = onConfirmPanel,
+                            onDiscard = onDiscardPanel
+                        )
+                        EditorTool.COLOR -> ColorPanel(
+                            recipe = state.recipe,
+                            isPro = state.isPro,
+                            onDraft = { viewModel.updateRecipeDraft(it) },
+                            onCommit = { viewModel.commitRecipe() },
+                            onRequestPaywall = { viewModel.requestPaywall() },
+                            onConfirm = onConfirmPanel,
+                            onDiscard = onDiscardPanel
+                        )
+                        EditorTool.EFFECTS -> EffectsPanel(
+                            recipe = state.recipe,
+                            onDraft = { viewModel.updateRecipeDraft(it) },
+                            onCommit = { viewModel.commitRecipe() },
+                            onConfirm = onConfirmPanel,
+                            onDiscard = onDiscardPanel
+                        )
+                        EditorTool.CROP -> CropPanel(
+                            geometry = state.geometry,
+                            photoWidth = photoWidth,
+                            photoHeight = photoHeight,
+                            cropTab = cropTab,
+                            onCropTabChange = { cropTab = it },
+                            onGeometryChange = { viewModel.updateGeometry(it) },
+                            onRatioSelect = { viewModel.setCropRatio(it) },
+                            onRotate = { viewModel.rotateGeometry(it) },
+                            onFlip = { viewModel.flipGeometry(it) },
+                            onConfirm = onConfirmPanel,
+                            onDiscard = onDiscardPanel
+                        )
+                        EditorTool.PRESETS -> PresetsPanel(
+                            presets = state.presets,
+                            preview = state.preview,
+                            appliedPresetName = state.appliedPresetName,
+                            presetIntensity = state.presetIntensity,
+                            onApplyPreset = { viewModel.applyPreset(it) },
+                            onClearPreset = { viewModel.clearPreset() },
+                            onIntensityChange = { viewModel.updatePresetIntensity(it) },
+                            onIntensityFinished = { viewModel.commitPresetIntensity() },
+                            onSavePresetClick = { showSaveDialog = true },
+                            onSharePresetClick = { qrPreset = it },
+                            onShuffleClick = {
+                                val pool = state.presets.filter {
+                                    it.name != state.appliedPresetName
+                                }
+                                val pick = pool.randomOrNull()
+                                    ?: state.presets.randomOrNull()
+                                if (pick != null) {
+                                    viewModel.applyPreset(pick)
+                                }
+                            },
+                            onConfirm = onConfirmPanel,
+                            onDiscard = {
+                                viewModel.clearPreset()
+                                panelVisible = false
+                            }
+                        )
+                        EditorTool.HISTORY -> HistoryPanel(
+                            recipe = state.recipe,
+                            geometry = state.geometry,
+                            photoWidth = photoWidth,
+                            photoHeight = photoHeight,
+                            appliedPresetName = state.appliedPresetName,
+                            presetIntensity = state.presetIntensity,
+                            onClearField = {
+                                viewModel.updateRecipeDraft(it)
+                                viewModel.commitRecipe()
+                            },
+                            onClearPreset = { viewModel.clearPreset() },
+                            onClearGeometry = { viewModel.resetGeometry() },
+                            onCopyEdit = { viewModel.copyCurrentEdit() },
+                            onReset = { viewModel.resetAdjustments() }
+                        )
+                    }
+                }
             }
-            SingleChoiceSegmentedButtonRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = LumeSpacing.md, vertical = LumeSpacing.xs)
-            ) {
-                SegmentedButton(
-                    selected = simpleMode,
-                    onClick = { simpleMode = true },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    label = { Text("Simples") }
-                )
-                SegmentedButton(
-                    selected = !simpleMode,
-                    onClick = { simpleMode = false },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    label = { Text("Pro") }
-                )
-            }
+            HorizontalDivider()
             EditorToolRail(
                 selected = selectedTool,
-                onSelect = { selectedTool = it }
+                onSelect = {
+                    selectedTool = it
+                    panelVisible = true
+                }
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(288.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(vertical = LumeSpacing.sm)
-            ) {
-                when (selectedTool) {
-                    EditorTool.LIGHT -> LightPanel(
-                        recipe = state.recipe,
-                        simpleMode = simpleMode,
-                        onDraft = { viewModel.updateRecipeDraft(it) },
-                        onCommit = { viewModel.commitRecipe() },
-                        onReset = { viewModel.resetAdjustments() }
-                    )
-                    EditorTool.COLOR -> ColorPanel(
-                        recipe = state.recipe,
-                        isPro = state.isPro,
-                        onDraft = { viewModel.updateRecipeDraft(it) },
-                        onCommit = { viewModel.commitRecipe() },
-                        onReset = { viewModel.resetAdjustments() },
-                        onRequestPaywall = { viewModel.requestPaywall() }
-                    )
-                    EditorTool.EFFECTS -> EffectsPanel(
-                        recipe = state.recipe,
-                        onDraft = { viewModel.updateRecipeDraft(it) },
-                        onCommit = { viewModel.commitRecipe() },
-                        onReset = { viewModel.resetAdjustments() }
-                    )
-                    EditorTool.CROP -> SoonPanel(
-                        title = "Cortar",
-                        description = "Corte, giro, endireitar e proporções de " +
-                            "rede social chegam na próxima entrega da Fase 1 " +
-                            "— a geometria é um estágio separado do motor de " +
-                            "cor. A foto original nunca é alterada.",
-                        mockLabels = listOf("Proporção", "Giro")
-                    )
-                    EditorTool.PRESETS -> PresetsPanel(
-                        presets = state.presets,
-                        preview = state.preview,
-                        appliedPresetName = state.appliedPresetName,
-                        presetIntensity = state.presetIntensity,
-                        onApplyPreset = { viewModel.applyPreset(it) },
-                        onClearPreset = { viewModel.clearPreset() },
-                        onIntensityChange = { viewModel.updatePresetIntensity(it) },
-                        onIntensityFinished = { viewModel.commitPresetIntensity() },
-                        onSavePresetClick = { showSaveDialog = true },
-                        onSharePresetClick = { qrPreset = it },
-                        onShuffleClick = {
-                            val pool = state.presets.filter {
-                                it.name != state.appliedPresetName
-                            }
-                            val pick = pool.randomOrNull()
-                                ?: state.presets.randomOrNull()
-                            if (pick != null) {
-                                viewModel.applyPreset(pick)
-                            }
-                        }
-                    )
-                    EditorTool.HISTORY -> HistoryPanel(
-                        recipe = state.recipe,
-                        appliedPresetName = state.appliedPresetName,
-                        presetIntensity = state.presetIntensity,
-                        onClearField = {
-                            viewModel.updateRecipeDraft(it)
-                            viewModel.commitRecipe()
-                        },
-                        onClearPreset = { viewModel.clearPreset() },
-                        onReset = { viewModel.resetAdjustments() }
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = LumeSpacing.md, vertical = LumeSpacing.xs),
-                horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
-            ) {
-                OutlinedButton(
-                    onClick = { viewModel.copyCurrentEdit() },
-                    enabled = state.photoUri != null,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Copiar edição")
-                }
-                Button(
-                    onClick = { showExportSheet = true },
-                    enabled = state.photoUri != null && !state.isExporting,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Exportar foto")
-                }
-            }
         }
     }
 

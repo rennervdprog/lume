@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.BrightnessHigh
 import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Contrast
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -78,6 +80,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.lume.core.HslChannel
 import app.lume.core.HslChannels
+import app.lume.core.Geometry
 import app.lume.core.Preset
 import app.lume.core.ProPolicy
 import app.lume.core.Recipe
@@ -126,45 +129,72 @@ internal fun EditorToolRail(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = LumeSpacing.xs),
+            .padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xxs),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         tools.forEach { (tool, label, icon) ->
             val isSelected = tool == selected
+            val tint = if (isSelected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .clip(MaterialTheme.shapes.small)
-                    .background(
-                        if (isSelected) {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            Color.Transparent
-                        }
-                    )
                     .clickable { onSelect(tool) }
                     .padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xs)
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
-                    tint = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
+                    tint = tint
                 )
                 Text(
                     text = label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = tint,
                     textAlign = TextAlign.Center
                 )
             }
+        }
+    }
+}
+
+/**
+ * Linha X/✓ no fim do painel: ✕ descarta os ajustes da ferramenta
+ * (volta ao estado da abertura da ferramenta), ✓ confirma e recolhe
+ * o painel, deixando a foto grande.
+ */
+@Composable
+internal fun ConfirmRow(
+    onDiscard: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(
+            onClick = onDiscard,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Descartar ajustes da ferramenta"
+            )
+        }
+        FilledIconButton(
+            onClick = onConfirm,
+            modifier = Modifier.size(48.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = "Confirmar e fechar a ferramenta"
+            )
         }
     }
 }
@@ -252,9 +282,11 @@ internal fun LumeSliderRow(
 internal fun LightPanel(
     recipe: Recipe,
     simpleMode: Boolean,
+    onSimpleModeChange: (Boolean) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onReset: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -263,6 +295,17 @@ internal fun LightPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Luz",
+                style = MaterialTheme.typography.titleSmall
+            )
+            MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
+        }
         if (simpleMode) {
             // Simples: 4 controles sobre a MESMA receita. Nada se perde
             // ao trocar para o modo Pro — só a densidade muda.
@@ -373,14 +416,66 @@ internal fun LightPanel(
                 onCommit = onCommit
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(onClick = onReset) {
-                Text("Redefinir ajustes")
-            }
+        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
+    }
+}
+
+/** Segmento pequeno Simples/Pro no cabeçalho do painel Luz. */
+@Composable
+private fun MiniSegment(
+    simple: Boolean,
+    onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        shape = CircleShape,
+        modifier = modifier
+    ) {
+        Row(modifier = Modifier.padding(2.dp)) {
+            MiniSegmentOption(
+                label = "Simples",
+                selected = simple,
+                onClick = { onChange(true) }
+            )
+            MiniSegmentOption(
+                label = "Pro",
+                selected = !simple,
+                onClick = { onChange(false) }
+            )
         }
+    }
+}
+
+@Composable
+private fun MiniSegmentOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.primaryContainer
+                } else {
+                    Color.Transparent
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = LumeSpacing.sm, vertical = LumeSpacing.xs)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        )
     }
 }
 
@@ -614,8 +709,9 @@ internal fun ColorPanel(
     isPro: Boolean,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onReset: () -> Unit,
     onRequestPaywall: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -624,6 +720,17 @@ internal fun ColorPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        HslSection(
+            recipe = recipe,
+            isPro = isPro,
+            onDraft = onDraft,
+            onCommit = onCommit,
+            onRequestPaywall = onRequestPaywall
+        )
+        Text(
+            text = "Global",
+            style = MaterialTheme.typography.titleSmall
+        )
         LumeSliderRow(
             label = "Temperatura",
             value = recipe.temperature,
@@ -664,21 +771,7 @@ internal fun ColorPanel(
             icon = Icons.Filled.Palette,
             onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
         )
-        HslSection(
-            recipe = recipe,
-            isPro = isPro,
-            onDraft = onDraft,
-            onCommit = onCommit,
-            onRequestPaywall = onRequestPaywall
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(onClick = onReset) {
-                Text("Redefinir ajustes")
-            }
-        }
+        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
     }
 }
 
@@ -691,7 +784,8 @@ internal fun EffectsPanel(
     recipe: Recipe,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onReset: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -740,14 +834,7 @@ internal fun EffectsPanel(
             icon = Icons.Filled.Opacity,
             onReset = { onDraft(recipe.copy(fade = 0f)); onCommit() }
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            TextButton(onClick = onReset) {
-                Text("Redefinir ajustes")
-            }
-        }
+        ConfirmRow(onDiscard = onDiscard, onConfirm = onConfirm)
     }
 }
 
@@ -759,10 +846,15 @@ internal fun EffectsPanel(
 @Composable
 internal fun HistoryPanel(
     recipe: Recipe,
+    geometry: Geometry,
+    photoWidth: Int,
+    photoHeight: Int,
     appliedPresetName: String?,
     presetIntensity: Float,
     onClearField: (Recipe) -> Unit,
     onClearPreset: () -> Unit,
+    onClearGeometry: () -> Unit,
+    onCopyEdit: () -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -846,7 +938,8 @@ internal fun HistoryPanel(
             text = "Pilha de edição",
             style = MaterialTheme.typography.titleSmall
         )
-        if (steps.isEmpty()) {
+        val hasGeometry = !geometry.isIdentity()
+        if (steps.isEmpty() && !hasGeometry) {
             Text(
                 text = "Nenhuma edição ainda. Mexa num controle ou aplique " +
                     "um preset — cada passo aparece aqui para remover um só.",
@@ -854,6 +947,35 @@ internal fun HistoryPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
+            if (hasGeometry) {
+                // O corte vive na foto já girada: o resumo usa as
+                // dimensões giradas.
+                val (rotatedWidth, rotatedHeight) = geometry.rotatedSize(
+                    photoWidth, photoHeight
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+                ) {
+                    Text(
+                        text = "Geometria",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = geometry.summary(rotatedWidth, rotatedHeight),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(onClick = onClearGeometry) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Remover geometria"
+                        )
+                    }
+                }
+            }
             steps.forEach { (label, value, cleared) ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -888,66 +1010,15 @@ internal fun HistoryPanel(
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                OutlinedButton(onClick = onCopyEdit) {
+                    Text("Copiar edição")
+                }
                 TextButton(onClick = onReset) {
                     Text("Redefinir tudo")
                 }
-            }
-        }
-    }
-}
-
-/**
- * Lugar reservado e honesto para ferramentas da Fase 1: explica o que
- * vem, sem controle falso. Os sliders são desabilitados de propósito.
- */
-@Composable
-internal fun SoonPanel(
-    title: String,
-    description: String,
-    mockLabels: List<String>,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = LumeSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-    ) {
-        Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
-            shape = MaterialTheme.shapes.small
-        ) {
-            Text(
-                text = "FASE 1",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xxs)
-            )
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall
-        )
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        mockLabels.forEach { label ->
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Slider(
-                    value = 0f,
-                    onValueChange = {},
-                    enabled = false,
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }
@@ -966,6 +1037,8 @@ internal fun PresetsPanel(
     onSavePresetClick: () -> Unit,
     onSharePresetClick: (Preset) -> Unit,
     onShuffleClick: () -> Unit,
+    onConfirm: () -> Unit,
+    onDiscard: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
@@ -1086,6 +1159,11 @@ internal fun PresetsPanel(
                 Text("Salvar ajustes como preset")
             }
         }
+        ConfirmRow(
+            onDiscard = onDiscard,
+            onConfirm = onConfirm,
+            modifier = Modifier.padding(horizontal = LumeSpacing.md)
+        )
     }
 }
 

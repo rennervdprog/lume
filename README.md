@@ -1,4 +1,4 @@
-# Lume — editor de fotos (Fase 1, motor)
+# Lume — editor de fotos (Fase 1, motor + geometria)
 
 > **Nome provisório.** "Lume" e o `applicationId` `app.lume` vieram do
 > protótipo visual e **não são decisão de marca**. Decidir nome final,
@@ -18,7 +18,7 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde na base + UI v2.** O Gradle não roda nesta VM (daemon
+verde até o motor (0.3.0).** O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários). Nada neste
 README afirma que o app roda — afirma o que foi escrito e o que foi
@@ -35,6 +35,17 @@ verificado (estático + CI + teste no aparelho).
 - **Motor GLSL próprio** (um passe só, EGL offscreen): faixas tonais
   seletivas, HSL 8 canais, curva tonal (LUT 256), efeitos — com
   fallback para a matriz na CPU se o GL falhar.
+- **Geometria** (`Geometry`, separada da receita): giro 90°, espelhos,
+  endireitar ±10° (corta o retângulo inscrito, sem cantos vazios) e
+  corte com moldura arrastável + proporções prontas. Aplica-se DEPOIS
+  da cor, igual no preview e na exportação. Vive só na sessão
+  (rascunhos guardam só a receita — persistência chega com migração).
+- **Editor redesenhado** (ergonomia aprovada em preview): foto grande
+  de borda a borda, uma fileira de ferramentas, sliders só da
+  ferramenta ativa, X/✓ por ferramenta (descarta/confirma e recolhe),
+  segurar para comparar + botão de dividir, histograma pequeno só em
+  Luz, Simples/Pro como segmento pequeno no painel Luz, Copiar edição
+  no Histórico.
 - **Painéis Luz, Cor, Efeitos e Presets** sobre a receita: sliders de
   luz/cor, HSL por cor (4 canais grátis, 8 Pro), chips de curva tonal,
   claridade/vinheta/grão/desbotado, trilho de ferramentas, histograma,
@@ -88,7 +99,8 @@ verificado (estático + CI + teste no aparelho).
 
 | TODO | Por quê não está nesta entrega |
 |---|---|
-| Crop/geometria, conta-gotas HSL, QR por câmera, mais presets | Próximas entregas da Fase 1, sobre este motor |
+| Conta-gotas HSL, QR por câmera, mais presets | Próximas entregas da Fase 1, sobre este motor |
+| Persistência da geometria em rascunhos | Exige campo novo no banco (destrutivo pré-lançamento é aceitável); hoje a geometria vive só na sessão |
 | Máscaras, remoção, remoção de fundo, IA on-device | Fase 2/3 do roteiro; flags Pro já existem |
 | Lote, RAW/DNG, câmera in-app | Fase 1/2; flags Pro já existem |
 | Login Google / e-mail + sync + migração visitante→conta | Exige projeto backend próprio (decisão pendente); interfaces prontas |
@@ -112,6 +124,7 @@ app.lume
 │   ├── RecipeJson.kt         JSON (Room, import/export, futuro sync)
 │   ├── Preset.kt             Preset + 6 presets originais embutidos
 │   ├── EditHistory.kt        Undo/redo sobre snapshots da receita
+│   ├── Geometry.kt           Geometria (giro/espelho/endireitar/corte) + matemática pura
 │   └── ProPolicy.kt          Tabela Grátis vs Pro + regras nunca-tranca
 ├── data/
 │   ├── local/                Room (presets, rascunhos) + DataStore
@@ -120,6 +133,7 @@ app.lume
 ├── imaging/
 │   ├── GlPhotoRenderer.kt    EGL + shader (motor, um passe só)
 │   ├── GlEngine.kt           Thread GL + fallback seguro
+│   ├── GeometryTransform.kt  Geometria sobre o bitmap (matriz + corte)
 │   ├── BitmapLoader.kt       Decodificação com EXIF
 │   ├── PhotoExporter.kt      Exportação JPEG (motor + fallback)
 │   ├── Histogram.kt          Histograma do bitmap renderizado

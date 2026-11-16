@@ -9,7 +9,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.CopiedEditStore
+import app.lume.core.CropRatio
 import app.lume.core.EditHistory
+import app.lume.core.Geometry
 import app.lume.core.Preset
 import app.lume.data.PresetLimitReached
 import app.lume.core.Recipe
@@ -17,6 +19,7 @@ import app.lume.data.DraftRepository
 import app.lume.data.PresetRepository
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
+import app.lume.imaging.GeometryTransform
 import app.lume.imaging.GlEngine
 import app.lume.imaging.Histogram
 import app.lume.imaging.PhotoExporter
@@ -36,6 +39,7 @@ data class EditorUiState(
     val preview: ImageBitmap? = null,
     val editedPreview: ImageBitmap? = null,
     val recipe: Recipe = Recipe.IDENTITY,
+    val geometry: Geometry = Geometry.IDENTITY,
     val presets: List<Preset> = emptyList(),
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
@@ -62,6 +66,23 @@ class EditorViewModel(
     private var renderJob: Job? = null
     private var presetBaseRecipe: Recipe? = null
     private var appliedPreset: Preset? = null
+
+    /**
+     * Geometria atual. Vive só na sessão: rascunhos guardam só a
+     * receita (a persistência da geometria chega com a migração do
+     * banco). A exportação aplica a geometria da sessão.
+     */
+    private var currentGeometry: Geometry = Geometry.IDENTITY
+
+    /**
+     * No modo de prévia do Cortar, o render aplica giro/espelho mas
+     * NÃO o corte — a moldura sobre a foto cheia é que mostra o corte.
+     * Fora desse modo, o render aplica a geometria completa.
+     */
+    private var cropPreviewMode: Boolean = false
+
+    /** Receita + geometria de quando a ferramenta atual foi aberta (X/✓). */
+    private var panelBaseline: Pair<Recipe, Geometry>? = null
 
     /**
      * Últimos 3 bitmaps renderizados. A tela pode estar mostrando o
@@ -105,12 +126,16 @@ class EditorViewModel(
         history.reset()
         appliedPreset = null
         presetBaseRecipe = null
+        currentGeometry = Geometry.IDENTITY
+        cropPreviewMode = false
+        panelBaseline = null
         _uiState.update {
             it.copy(
                 photoUri = uri,
                 preview = null,
                 editedPreview = null,
                 recipe = Recipe.IDENTITY,
+                geometry = Geometry.IDENTITY,
                 canUndo = false,
                 canRedo = false,
                 isLoadingPhoto = true,
@@ -198,10 +223,12 @@ class EditorViewModel(
     fun resetAdjustments() {
         history.commit(Recipe.IDENTITY)
         clearAppliedPresetTracking()
+        currentGeometry = Geometry.IDENTITY
         persistDraft()
         _uiState.update {
             it.copy(
                 recipe = Recipe.IDENTITY,
+                geometry = Geometry.IDENTITY,
                 canUndo = history.canUndo,
                 canRedo = history.canRedo,
                 appliedPresetName = null,
@@ -209,6 +236,102 @@ class EditorViewModel(
             )
         }
         refreshRender()
+    }
+
+    // ---- Geometria (sessão; sem histórico próprio) ----
+
+    /** Atualiza a geometria e re-renderiza. Vale para arrasto e botão. */
+    fun updateGeometry(geometry: Geometry) {
+        currentGeometry = geometry.clamped()
+        _uiState.update { it.copy(geometry = currentGeometry) }
+        refreshRender()
+    }
+
+    /** Proporção pronta: corte centralizado de maior área sobre a foto girada. */
+    fun setCropRatio(ratio: CropRatio) {
+        val bitmap = previewBitmap ?: return
+        val (width, height) = currentGeometry.rotatedSize(bitmap.width, bitmap.height)
+        val crop = if (ratio == CropRatio.FREE) {
+            null
+        } else {
+            ratio.centeredRect(width, height)
+        }
+        updateGeometry(currentGeometry.copy(crop = crop))
+    }
+
+    /** Gira em passos de 90° (positivo = horário). */
+    fun rotateGeometry(degrees: Int) {
+        updateGeometry(
+            currentGeometry.copy(rotationDegrees = currentGeometry.rotationDegrees + degrees)
+        )
+    }
+
+    /** Espelha na horizontal (espelho) ou na vertical (inverte). */
+    fun flipGeometry(horizontal: Boolean) {
+        updateGeometry(
+            if (horizontal) {
+                currentGeometry.copy(flipHorizontal = !currentGeometry.flipHorizontal)
+            } else {
+                currentGeometry.copy(flipVertical = !currentGeometry.flipVertical)
+            }
+        )
+    }
+
+    /** Endireitar, em graus (-10..10). */
+    fun updateStraighten(degrees: Float) {
+        updateGeometry(currentGeometry.copy(straightenDegrees = degrees))
+    }
+
+    /** Zera só a geometria (a receita de cor fica). */
+    fun resetGeometry() {
+        updateGeometry(Geometry.IDENTITY)
+    }
+
+    /**
+     * Liga/desliga o modo de prévia do Cortar (render sem o corte, com
+     * a moldura mostrando o corte sobre a foto cheia).
+     */
+    fun setCropPreviewMode(enabled: Boolean) {
+        if (cropPreviewMode == enabled) return
+        cropPreviewMode = enabled
+        refreshRender()
+    }
+
+    // ---- Sessão de ferramenta (X/✓) ----
+
+    /** Guarda a receita + geometria de quando a ferramenta foi aberta. */
+    fun beginPanelSession() {
+        panelBaseline = history.current to currentGeometry
+    }
+
+    /**
+     * ✕ — volta à receita + geometria da abertura da ferramenta. A
+     * volta da receita entra no desfazer (é reversível); a geometria
+     * não tem histórico próprio.
+     */
+    fun discardPanelSession() {
+        val baseline = panelBaseline ?: return
+        val (baselineRecipe, baselineGeometry) = baseline
+        if (baselineRecipe != history.current) {
+            history.commit(baselineRecipe)
+            clearAppliedPresetTracking()
+            persistDraft()
+        }
+        currentGeometry = baselineGeometry
+        _uiState.update {
+            it.copy(
+                recipe = history.current,
+                geometry = baselineGeometry,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        refreshRender()
+    }
+
+    /** ✓ — confirma: a base da ferramenta passa a ser o estado atual. */
+    fun confirmPanelSession() {
+        panelBaseline = history.current to currentGeometry
     }
 
     fun applyPreset(preset: Preset) {
@@ -312,8 +435,9 @@ class EditorViewModel(
         if (_uiState.value.isExporting) return
         _uiState.update { it.copy(isExporting = true, exportedUri = null) }
         val recipe = history.current
+        val geometry = currentGeometry
         viewModelScope.launch {
-            val result = PhotoExporter.exportJpeg(appContext, uri, recipe)
+            val result = PhotoExporter.exportJpeg(appContext, uri, recipe, geometry)
             result.fold(
                 onSuccess = { savedUri ->
                     _uiState.update {
@@ -380,13 +504,20 @@ class EditorViewModel(
      * Renderiza o preview editado com o motor e recalcula o histograma
      * sobre o bitmap renderizado. O render anterior é cancelado:
      * durante o arrasto de slider, só o último vale. Receita identidade
-     * não renderiza — mostra o original direto, pixel a pixel.
+     * + geometria identidade não renderiza — mostra o original direto,
+     * pixel a pixel. No modo de prévia do Cortar, o corte fica fora do
+     * render (a moldura mostra o corte sobre a foto cheia).
      */
     private fun refreshRender() {
         val bitmap = previewBitmap ?: return
         val recipe = history.current
+        val effectiveGeometry = if (cropPreviewMode) {
+            currentGeometry.withoutCrop()
+        } else {
+            currentGeometry
+        }
         renderJob?.cancel()
-        if (recipe.isIdentity()) {
+        if (recipe.isIdentity() && effectiveGeometry.isIdentity()) {
             _uiState.update { it.copy(editedPreview = bitmap.asImageBitmap()) }
             renderJob = viewModelScope.launch(Dispatchers.Default) {
                 val values = Histogram.compute(bitmap)
@@ -397,14 +528,25 @@ class EditorViewModel(
         renderJob = viewModelScope.launch(Dispatchers.Default) {
             try {
                 if (bitmap.isRecycled) return@launch
-                val rendered = PhotoExporter.renderWithEngine(bitmap, recipe)
-                val values = Histogram.compute(rendered)
-                renderedRing.addLast(rendered)
+                // Receita identidade: a geometria roda sobre o original.
+                // Se não, o motor de cor renderiza primeiro.
+                val base = if (recipe.isIdentity()) {
+                    bitmap
+                } else {
+                    PhotoExporter.renderWithEngine(bitmap, recipe)
+                }
+                val final = GeometryTransform.apply(base, effectiveGeometry)
+                if (final !== base && base !== bitmap) {
+                    // Intermediário do motor: o final já o substitui.
+                    base.recycle()
+                }
+                val values = Histogram.compute(final)
+                renderedRing.addLast(final)
                 while (renderedRing.size > 3) {
                     renderedRing.removeFirst().recycle()
                 }
                 _uiState.update {
-                    it.copy(editedPreview = rendered.asImageBitmap(), histogram = values)
+                    it.copy(editedPreview = final.asImageBitmap(), histogram = values)
                 }
             } catch (e: CancellationException) {
                 throw e

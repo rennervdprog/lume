@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import app.lume.core.Geometry
 import app.lume.core.Recipe
 import app.lume.core.RecipeColorMatrix
 import java.text.SimpleDateFormat
@@ -39,13 +40,16 @@ object PhotoExporter {
     const val JPEG_QUALITY: Int = 92
 
     /**
-     * Renderiza [recipe] sobre a foto [photoUri] em resolução total e
-     * salva o JPEG na galeria (Pasta "Lume"). Retorna a Uri do arquivo.
+     * Renderiza [recipe] sobre a foto [photoUri] em resolução total,
+     * aplica a [geometry] e salva o JPEG na galeria (Pasta "Lume").
+     * Retorna a Uri do arquivo. A geometria roda depois da cor, igual
+     * ao preview — o que o usuário vê é o que sai no arquivo.
      */
     suspend fun exportJpeg(
         context: Context,
         photoUri: Uri,
-        recipe: Recipe
+        recipe: Recipe,
+        geometry: Geometry = Geometry.IDENTITY
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val source = BitmapLoader.decodeFull(context, photoUri)
@@ -56,8 +60,12 @@ object PhotoExporter {
             if (rendered !== source) {
                 source.recycle()
             }
-            val savedUri = saveToGallery(context, rendered)
-            rendered.recycle()
+            val final = GeometryTransform.apply(rendered, geometry)
+            if (final !== rendered) {
+                rendered.recycle()
+            }
+            val savedUri = saveToGallery(context, final)
+            final.recycle()
             if (savedUri == null) {
                 Result.failure(IllegalStateException("Não foi possível salvar o arquivo."))
             } else {
