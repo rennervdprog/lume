@@ -269,9 +269,10 @@ fun matchingRatio(crop: CropRect?, imageWidth: Int, imageHeight: Int): CropRatio
  * usa este corte para não deixar cantos vazios: girar e depois cortar
  * as bordas, em vez de mostrar fundo.
  *
- * Cálculo fechado: o canto (s·w/2, s·h/2) precisa caber no retângulo
- * girado, o que dá duas restrições sobre o fator s (uma por eixo).
- * Ângulos múltiplos de 90° não criam cantos vazios: devolve a foto cheia.
+ * Cálculo fechado: os cantos de sinais opostos dão duas restrições
+ * sobre o fator s — o canto (+,+) limita pela largura, o canto (+,-)
+ * limita pela altura. Ângulos múltiplos de 90° não criam cantos
+ * vazios: devolve a foto cheia.
  */
 fun inscribedRectForRotation(width: Int, height: Int, degrees: Float): CropRect {
     val theta = Math.toRadians(abs(degrees).toDouble() % 180.0)
@@ -284,8 +285,7 @@ fun inscribedRectForRotation(width: Int, height: Int, degrees: Float): CropRect 
     val w = width.toDouble()
     val h = height.toDouble()
     val s1 = w / (w * c + h * s)
-    val denom2 = abs(h * c - w * s)
-    val s2 = if (denom2 < 1e-9) 1.0 else h / denom2
+    val s2 = h / (h * c + w * s)
     val scale = min(1.0, min(s1, s2)).toFloat()
     val margin = (1f - scale) / 2f
     return CropRect(margin, margin, 1f - margin, 1f - margin)
