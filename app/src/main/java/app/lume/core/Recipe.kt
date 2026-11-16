@@ -6,15 +6,23 @@ import kotlinx.serialization.Serializable
  * Receita paramétrica versionada — a ÚNICA fonte de verdade da edição.
  *
  * A foto original nunca é alterada. A receita descreve ajustes; o preview
- * e a exportação aplicam a MESMA receita (ver [RecipeColorMatrix]).
- * Presets são receitas nomeadas. O histórico é uma lista de receitas.
+ * e a exportação aplicam a MESMA receita (ver [app.lume.imaging.GlEngine],
+ * com fallback em [RecipeColorMatrix]). Presets são receitas nomeadas.
+ * O histórico é uma lista de receitas.
  *
  * Intervalos (iguais aos sliders da UI):
  * - exposure: -2..+2 (passos de exposição)
- * - demais: -100..+100
+ * - demais escalares: -100..+100
+ * - hsl: 8 canais (ver [HslChannels]), cada um com matiz/saturação/
+ *   luminância em -100..+100
+ * - curve: pontos de controle em 0..1 (ver [ToneCurve])
  *
- * Ao adicionar um campo, incremente [CURRENT_VERSION] e escreva a migração
- * em [RecipeJson]. Nunca quebre receitas/presets antigos sem migração.
+ * Versões: v1 tinha só luz/cor global. A v2 (Fase 1) adiciona HSL,
+ * curva e efeitos — todos com default = identidade, então JSON v1
+ * decodifica direto (ver [RecipeJson]) e [clamped] normaliza a versão.
+ * Ao adicionar um campo, incremente [CURRENT_VERSION], dê default
+ * identidade e estenda [interpolatedTo] e [clamped]. Nunca quebre
+ * receitas/presets antigos sem migração.
  */
 @Serializable
 data class Recipe(
@@ -28,7 +36,13 @@ data class Recipe(
     val temperature: Float = 0f,
     val tint: Float = 0f,
     val vibrance: Float = 0f,
-    val saturation: Float = 0f
+    val saturation: Float = 0f,
+    val hsl: List<HslChannel> = List(HslChannels.COUNT) { HslChannel() },
+    val curve: ToneCurve = ToneCurve(),
+    val clarity: Float = 0f,
+    val vignette: Float = 0f,
+    val grain: Float = 0f,
+    val fade: Float = 0f
 ) {
     fun isIdentity(): Boolean = this == Recipe(version = version)
 
@@ -37,6 +51,8 @@ data class Recipe(
     fun interpolatedTo(other: Recipe, fraction: Float): Recipe {
         val f = fraction.coerceIn(0f, 1f)
         fun lerp(a: Float, b: Float): Float = a + (b - a) * f
+        val ownHsl = HslChannels.normalize(hsl)
+        val otherHsl = HslChannels.normalize(other.hsl)
         return Recipe(
             version = CURRENT_VERSION,
             exposure = lerp(exposure, other.exposure),
@@ -48,7 +64,13 @@ data class Recipe(
             temperature = lerp(temperature, other.temperature),
             tint = lerp(tint, other.tint),
             vibrance = lerp(vibrance, other.vibrance),
-            saturation = lerp(saturation, other.saturation)
+            saturation = lerp(saturation, other.saturation),
+            hsl = ownHsl.zip(otherHsl) { a, b -> a.interpolatedTo(b, f) },
+            curve = curve.interpolatedTo(other.curve, f),
+            clarity = lerp(clarity, other.clarity),
+            vignette = lerp(vignette, other.vignette),
+            grain = lerp(grain, other.grain),
+            fade = lerp(fade, other.fade)
         )
     }
 
@@ -65,11 +87,17 @@ data class Recipe(
         temperature = temperature.coerceIn(-100f, 100f),
         tint = tint.coerceIn(-100f, 100f),
         vibrance = vibrance.coerceIn(-100f, 100f),
-        saturation = saturation.coerceIn(-100f, 100f)
+        saturation = saturation.coerceIn(-100f, 100f),
+        hsl = HslChannels.normalize(hsl),
+        curve = curve.clamped(),
+        clarity = clarity.coerceIn(-100f, 100f),
+        vignette = vignette.coerceIn(-100f, 100f),
+        grain = grain.coerceIn(-100f, 100f),
+        fade = fade.coerceIn(-100f, 100f)
     )
 
     companion object {
-        const val CURRENT_VERSION: Int = 1
+        const val CURRENT_VERSION: Int = 2
         val IDENTITY: Recipe = Recipe()
     }
 }

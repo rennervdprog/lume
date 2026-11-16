@@ -1,4 +1,4 @@
-# Lume — editor de fotos (Fase 0, base local)
+# Lume — editor de fotos (Fase 1, motor)
 
 > **Nome provisório.** "Lume" e o `applicationId` `app.lume` vieram do
 > protótipo visual e **não são decisão de marca**. Decidir nome final,
@@ -17,23 +17,28 @@ dois documentos internos:
   §§4–7): tabela Grátis vs Pro, contas, arquitetura de receita
   paramétrica, roteiro por fases e diferenciais P0.
 
-Estado: **base Fase 0 local, sem repositório, sem build verificado.**
-O Gradle não roda nesta VM (daemon incompatível — ver AGENTS.md). A
-primeira compilação real será no CI do repositório, quando ele for
-criado. Nada neste README afirma que o app compila ou roda — afirma o
-que foi escrito e o que foi verificado estaticamente.
+Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
+verde na base + UI v2.** O Gradle não roda nesta VM (daemon
+incompatível — ver AGENTS.md); a compilação real é o CI do repositório
+(workflow `ci.yml`: assembleDebug + testes unitários). Nada neste
+README afirma que o app roda — afirma o que foi escrito e o que foi
+verificado (estático + CI + teste no aparelho).
 
 ## O que funciona (código escrito, não verificado por build)
 
 - **Projeto Gradle + Compose + Navigation**: telas Biblioteca, Editor,
   Conta e Paywall (shell com a tabela real, sem compra).
 - **Photo Picker** do sistema para abrir 1 foto (sem permissão de mídia).
-- **Receita paramétrica versionada** (`Recipe` v1, JSON via
+- **Receita paramétrica versionada** (`Recipe` v2, JSON via
   kotlinx-serialization): uma fonte de verdade para preview, exportação,
-  presets, histórico e rascunhos.
-- **Painéis Luz e Cor** com sliders funcionais sobre a receita:
-  exposição, contraste, realces, sombras, brancos, pretos, temperatura,
-  matiz, vibração, saturação.
+  presets, histórico e rascunhos. JSON v1 decodifica com defaults v2.
+- **Motor GLSL próprio** (um passe só, EGL offscreen): faixas tonais
+  seletivas, HSL 8 canais, curva tonal (LUT 256), efeitos — com
+  fallback para a matriz na CPU se o GL falhar.
+- **Painéis Luz, Cor, Efeitos e Presets** sobre a receita: sliders de
+  luz/cor, HSL por cor (4 canais grátis, 8 Pro), chips de curva tonal,
+  claridade/vinheta/grão/desbotado, trilho de ferramentas, histograma,
+  comparar segurar/dividir, pilha de edição, lote por copiar/colar.
 - **Presets como receitas**: 6 presets iniciais originais, criar/salvar/
   aplicar, intensidade 0–100%, segurar para comparar (antes/depois),
   importar/exportar JSON.
@@ -53,34 +58,37 @@ que foi escrito e o que foi verificado estaticamente.
 
 ## Decisão de renderização (e suas limitações honestas)
 
-**Abordagem da Fase 0: matriz de cor 4x5 compartilhada**
-(`core/RecipeColorMatrix.kt`).
+**Abordagem da Fase 1: shader GLSL próprio, um passe só**
+(`imaging/GlPhotoRenderer.kt`, via `imaging/GlEngine.kt`).
 
-- O preview (Compose `ColorFilter.colorMatrix`) e a exportação
-  (`android.graphics.ColorMatrix` + Canvas) aplicam a **mesma** matriz,
-  gerada da mesma receita. O que se vê é o que sai no arquivo.
-- Funciona do minSdk 24 ao atual, sem dependência nova, sem `RenderEffect`
-  (API 31+) e sem pipeline OpenGL próprio nesta fase.
-- Por que não GPUImage agora: o estudo manda verificar licença e
-  manutenção antes de adotar, e o pipeline baseado em View (`AndroidView`)
-  adiciona complexidade e risco para a Fase 0. A decisão será revisitada
-  na Fase 1, quando HSL/curvas exigirem shader de qualquer forma.
+- O preview e a exportação renderizam a **mesma** receita no **mesmo**
+  shader (EGL pbuffer offscreen, OpenGL ES 2.0): claridade → exposição →
+  balanço de branco → faixas tonais seletivas → contraste → vibração/
+  saturação → HSL 8 canais → curvas (LUT 256, master + RGB) → desbotado
+  → vinheta → grão. O que se vê é o que sai no arquivo.
+- A matriz de cor 4x5 (`core/RecipeColorMatrix.kt`) virou a **rota de
+  fallback**: se o GL falhar (sem EGL, foto acima do limite de textura
+  da GPU), preview e exportação caem para a matriz na CPU — a edição
+  continua funcionando, sem os ajustes v2 (HSL/curva/efeitos). A tira
+  de presets e as amostras da Biblioteca usam a matriz direto
+  (aproximação rápida dos looks).
+- Por que shader próprio e não GPUImage: sem dependência nova, sem
+  pipeline baseado em View (`AndroidView`), e o controle total da ordem
+  dos estágios — que é o contrato de portabilidade dos presets.
 
-**Limitações da matriz (linear), documentadas no código:**
+**Limitações honestas, documentadas no código:**
 
-- Realces/sombras/brancos/pretos são uma **aproximação** (ajuste tonal
-  combinado via deslocamento + contraste), não seletivos por faixa tonal.
-- Vibrance é saturação mais suave (60%), não vibrance por pixel.
-- Temperatura/matiz são ganhos por canal (aproximação de balanço de branco).
-- A curva tonal real (LUT 256), o HSL por canal e as máscaras exigem
-  shader e são Fase 1/2. A fronteira de troca é `RecipeColorMatrix`:
-  quando o motor mudar, preview e exportação continuam idênticos.
+- A claridade usa a média 3x3 da fonte (borrar os vizinhos já
+  processados exigiria 9 avaliações do pipeline por pixel).
+- Fotos acima de `GL_MAX_TEXTURE_SIZE` caem para a matriz (sem tiles).
+- Temperatura/matiz seguem ganhos por canal (aproximação de balanço de
+  branco, igual à matriz — os looks da Fase 0 carregam iguais).
 
 ## O que é TODO (e por quê)
 
-| TODO | Por quê não está na Fase 0 |
+| TODO | Por quê não está nesta entrega |
 |---|---|
-| HSL por canal, curvas, efeitos/detalhe, crop, geometria | Exigem shader/canvas próprios; painéis nascem na Fase 1 sobre a mesma receita |
+| Crop/geometria, conta-gotas HSL, QR por câmera, mais presets | Próximas entregas da Fase 1, sobre este motor |
 | Máscaras, remoção, remoção de fundo, IA on-device | Fase 2/3 do roteiro; flags Pro já existem |
 | Lote, RAW/DNG, câmera in-app | Fase 1/2; flags Pro já existem |
 | Login Google / e-mail + sync + migração visitante→conta | Exige projeto backend próprio (decisão pendente); interfaces prontas |
@@ -96,8 +104,11 @@ que foi escrito e o que foi verificado estaticamente.
 ```
 app.lume
 ├── core/          Puro (sem Android, testável em JVM)
-│   ├── Recipe.kt             Receita v1 + interpolação + clamp
-│   ├── RecipeColorMatrix.kt  Receita → matriz 4x5 (preview = exportação)
+│   ├── Recipe.kt             Receita v2 + interpolação + clamp
+│   ├── HslChannels.kt        8 canais HSL + centros + normalização
+│   ├── ToneCurve.kt          Curva tonal (master + RGB) + chips
+│   ├── ToneCurveLut.kt       Curva → LUT 256 / RGBA do shader
+│   ├── RecipeColorMatrix.kt  Receita → matriz 4x5 (fallback do motor)
 │   ├── RecipeJson.kt         JSON (Room, import/export, futuro sync)
 │   ├── Preset.kt             Preset + 6 presets originais embutidos
 │   ├── EditHistory.kt        Undo/redo sobre snapshots da receita
@@ -106,7 +117,14 @@ app.lume
 │   ├── local/                Room (presets, rascunhos) + DataStore
 │   ├── auth/                 AuthRepository + visitante local
 │   └── pro/                  EntitlementRepository + flag de debug
-├── imaging/       Decodificação (EXIF), exportação JPEG, compartilhar
+├── imaging/
+│   ├── GlPhotoRenderer.kt    EGL + shader (motor, um passe só)
+│   ├── GlEngine.kt           Thread GL + fallback seguro
+│   ├── BitmapLoader.kt       Decodificação com EXIF
+│   ├── PhotoExporter.kt      Exportação JPEG (motor + fallback)
+│   ├── Histogram.kt          Histograma do bitmap renderizado
+│   ├── PresetQr.kt           QR do preset (ZXing)
+│   └── ShareHelper.kt        Compartilhar via share sheet
 ├── di/            AppContainer (composição manual, sem framework DI)
 └── ui/            theme, navigation, library, editor, account, paywall
 ```

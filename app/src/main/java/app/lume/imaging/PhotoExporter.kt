@@ -23,13 +23,16 @@ import kotlinx.coroutines.withContext
  * Exportação em resolução total, sem marca d'água e sem limite — para
  * todo mundo, sem Pro (regra dura do estudo §4.4).
  *
- * Aplica a MESMA matriz de [RecipeColorMatrix] usada pelo preview: o
- * que o usuário vê é o que sai no arquivo. A renderização acontece fora
- * da thread de UI.
+ * Renderiza com o MESMO motor do preview ([GlEngine], shader): o que o
+ * usuário vê é o que sai no arquivo. Se o motor falhar (foto acima do
+ * limite de textura da GPU, EGL indisponível), cai para a matriz
+ * ([render], CPU) — a exportação continua funcionando, sem os ajustes
+ * de HSL/curva/efeitos da receita v2. A renderização acontece fora da
+ * thread de UI.
  *
  * TODO (Fase 1+): preservar EXIF (com opção de remover localização),
- * HEIC/PNG/TIFF (Pro), tiles para texturas acima do limite da GPU
- * quando o motor virar shader, e fila de lote com WorkManager.
+ * HEIC/PNG/TIFF (Pro), tiles para texturas acima do limite da GPU, e
+ * fila de lote com WorkManager.
  */
 object PhotoExporter {
 
@@ -49,7 +52,7 @@ object PhotoExporter {
                 ?: return@withContext Result.failure(
                     IllegalStateException("Não foi possível abrir a foto original.")
                 )
-            val rendered = render(source, recipe)
+            val rendered = renderWithEngine(source, recipe)
             if (rendered !== source) {
                 source.recycle()
             }
@@ -65,7 +68,22 @@ object PhotoExporter {
         }
     }
 
-    /** Renderiza a receita sobre [source] e devolve um bitmap novo. */
+    /**
+     * Renderiza a receita sobre [source] com o motor GL; em qualquer
+     * falha do motor, cai para [render] (matriz, CPU). Devolve um
+     * bitmap novo (nunca o [source]).
+     */
+    suspend fun renderWithEngine(source: Bitmap, recipe: Recipe): Bitmap {
+        return GlEngine.render(source, recipe) ?: render(source, recipe)
+    }
+
+    /**
+     * Renderiza a receita sobre [source] pela matriz de cor (CPU) e
+     * devolve um bitmap novo. É o fallback do motor GL — e o caminho
+     * que a tira de presets e as amostras da Biblioteca usam. Aplica
+     * só os campos de luz/cor global (v1); HSL, curva e efeitos são
+     * ignorados aqui.
+     */
     fun render(source: Bitmap, recipe: Recipe): Bitmap {
         val values = RecipeColorMatrix.values(recipe)
         val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)

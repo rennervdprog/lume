@@ -104,9 +104,21 @@ object ProPolicy {
     fun batchLimit(isPro: Boolean): Int =
         if (isPro) Int.MAX_VALUE else FREE_BATCH_LIMIT
 
+    /**
+     * Canais HSL liberados no plano grátis: os 4 primeiros (vermelho,
+     * laranja, amarelo, verde — os da pele e da luz brasileira). Os
+     * outros 4 exigem Pro (flag HSL_FULL). Índice fora de 0..7 = trancado.
+     */
+    fun hslChannelUnlocked(channelIndex: Int, isPro: Boolean): Boolean {
+        if (channelIndex !in 0 until HslChannels.COUNT) return false
+        if (isPro) return true
+        return channelIndex < FREE_HSL_CHANNELS
+    }
+
     const val FREE_OWN_PRESET_LIMIT: Int = 10
     const val FREE_BATCH_LIMIT: Int = 5
     const val FREE_AI_TRIAL_USES: Int = 3
+    const val FREE_HSL_CHANNELS: Int = 4
 
     /** Linha da tabela do paywall. Textos em PT-BR, sem nome de concorrente. */
     data class PaywallRow(

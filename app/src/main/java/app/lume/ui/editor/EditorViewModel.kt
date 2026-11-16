@@ -17,8 +17,10 @@ import app.lume.data.DraftRepository
 import app.lume.data.PresetRepository
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
+import app.lume.imaging.GlEngine
 import app.lume.imaging.Histogram
 import app.lume.imaging.PhotoExporter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +34,7 @@ import kotlinx.coroutines.withContext
 data class EditorUiState(
     val photoUri: Uri? = null,
     val preview: ImageBitmap? = null,
+    val editedPreview: ImageBitmap? = null,
     val recipe: Recipe = Recipe.IDENTITY,
     val presets: List<Preset> = emptyList(),
     val canUndo: Boolean = false,
@@ -56,9 +59,18 @@ class EditorViewModel(
 
     private val history = EditHistory()
     private var previewBitmap: Bitmap? = null
-    private var histogramJob: Job? = null
+    private var renderJob: Job? = null
     private var presetBaseRecipe: Recipe? = null
     private var appliedPreset: Preset? = null
+
+    /**
+     * Últimos 3 bitmaps renderizados. A tela pode estar mostrando o
+     * atual ou o anterior (uma recomposição em voo pode ler o estado
+     * antigo) — reciclar só o de três renders atrás é seguro. Reciclar
+     * o anterior imediatamente correria o risco de desenhar um bitmap
+     * reciclado.
+     */
+    private val renderedRing = ArrayDeque<Bitmap>()
 
     private val _uiState = MutableStateFlow(EditorUiState())
     val uiState: StateFlow<EditorUiState> = _uiState.asStateFlow()
@@ -88,6 +100,7 @@ class EditorViewModel(
             // Nem todo provedor concede permissão persistível; a edição da
             // sessão atual continua funcionando com a permissão temporária.
         }
+        renderJob?.cancel()
         recyclePreview()
         history.reset()
         appliedPreset = null
@@ -96,6 +109,7 @@ class EditorViewModel(
             it.copy(
                 photoUri = uri,
                 preview = null,
+                editedPreview = null,
                 recipe = Recipe.IDENTITY,
                 canUndo = false,
                 canRedo = false,
@@ -131,7 +145,7 @@ class EditorViewModel(
                     isLoadingPhoto = false
                 )
             }
-            refreshHistogram()
+            refreshRender()
         }
     }
 
@@ -140,7 +154,7 @@ class EditorViewModel(
         history.preview(recipe)
         clearAppliedPresetTracking()
         _uiState.update { it.copy(recipe = history.current) }
-        refreshHistogram()
+        refreshRender()
     }
 
     /** Fim do gesto: confirma a edição no histórico e salva o rascunho. */
@@ -150,7 +164,7 @@ class EditorViewModel(
         _uiState.update {
             it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun undo() {
@@ -164,7 +178,7 @@ class EditorViewModel(
                 canRedo = history.canRedo
             )
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun redo() {
@@ -178,7 +192,7 @@ class EditorViewModel(
                 canRedo = history.canRedo
             )
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun resetAdjustments() {
@@ -194,7 +208,7 @@ class EditorViewModel(
                 presetIntensity = 1f
             )
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun applyPreset(preset: Preset) {
@@ -212,7 +226,7 @@ class EditorViewModel(
                 presetIntensity = 1f
             )
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     /** Volta à receita de antes do preset (cartão "Original" da tira). */
@@ -231,7 +245,7 @@ class EditorViewModel(
                 presetIntensity = 1f
             )
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     /** Copia a edição atual para colar em rascunhos na Biblioteca. */
@@ -250,7 +264,7 @@ class EditorViewModel(
         val blended = base.interpolatedTo(preset.recipe, intensity)
         history.preview(blended)
         _uiState.update { it.copy(recipe = blended, presetIntensity = intensity) }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun commitPresetIntensity() {
@@ -259,7 +273,7 @@ class EditorViewModel(
         _uiState.update {
             it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
         }
-        refreshHistogram()
+        refreshRender()
     }
 
     fun savePreset(name: String, collection: String) {
@@ -330,6 +344,11 @@ class EditorViewModel(
         _uiState.update { it.copy(paywallRequested = false) }
     }
 
+    /** Recurso Pro tocado no plano grátis: abre o paywall. */
+    fun requestPaywall() {
+        _uiState.update { it.copy(paywallRequested = true) }
+    }
+
     fun clearExportedUri() {
         _uiState.update { it.copy(exportedUri = null) }
     }
@@ -357,25 +376,58 @@ class EditorViewModel(
         }
     }
 
-    /** Recalcula o histograma da foto editada. O cálculo anterior é
-     * cancelado: durante o arrasto de slider, só o último vale. */
-    private fun refreshHistogram() {
+    /**
+     * Renderiza o preview editado com o motor e recalcula o histograma
+     * sobre o bitmap renderizado. O render anterior é cancelado:
+     * durante o arrasto de slider, só o último vale. Receita identidade
+     * não renderiza — mostra o original direto, pixel a pixel.
+     */
+    private fun refreshRender() {
         val bitmap = previewBitmap ?: return
         val recipe = history.current
-        histogramJob?.cancel()
-        histogramJob = viewModelScope.launch(Dispatchers.Default) {
-            val values = Histogram.compute(bitmap, recipe)
-            _uiState.update { it.copy(histogram = values) }
+        renderJob?.cancel()
+        if (recipe.isIdentity()) {
+            _uiState.update { it.copy(editedPreview = bitmap.asImageBitmap()) }
+            renderJob = viewModelScope.launch(Dispatchers.Default) {
+                val values = Histogram.compute(bitmap)
+                _uiState.update { it.copy(histogram = values) }
+            }
+            return
+        }
+        renderJob = viewModelScope.launch(Dispatchers.Default) {
+            try {
+                if (bitmap.isRecycled) return@launch
+                val rendered = PhotoExporter.renderWithEngine(bitmap, recipe)
+                val values = Histogram.compute(rendered)
+                renderedRing.addLast(rendered)
+                while (renderedRing.size > 3) {
+                    renderedRing.removeFirst().recycle()
+                }
+                _uiState.update {
+                    it.copy(editedPreview = rendered.asImageBitmap(), histogram = values)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Foto trocada (bitmap reciclado) no meio do render: ignora
+                // — o próximo refresh renderiza a foto atual. Nunca pode
+                // estourar para o usuário.
+            }
         }
     }
 
     private fun recyclePreview() {
         previewBitmap?.recycle()
         previewBitmap = null
+        while (renderedRing.isNotEmpty()) {
+            renderedRing.removeFirst().recycle()
+        }
     }
 
     override fun onCleared() {
+        renderJob?.cancel()
         recyclePreview()
+        GlEngine.release()
         super.onCleared()
     }
 }

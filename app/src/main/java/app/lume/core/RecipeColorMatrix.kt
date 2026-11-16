@@ -5,28 +5,28 @@ import kotlin.math.pow
 /**
  * Converte uma [Recipe] numa matriz de cor 4x5 (20 floats, ordem RGBA).
  *
- * A MESMA matriz alimenta:
- * - o preview (Compose `ColorFilter.colorMatrix`), e
- * - a exportação (`android.graphics.ColorMatrix` + Canvas).
+ * Desde a Fase 1, esta é a ROTA DE FALLBACK do motor: o preview e a
+ * exportação passam primeiro pelo shader ([app.lume.imaging.GlEngine])
+ * e só caem aqui se o GL falhar — e a tira de presets e as amostras da
+ * Biblioteca usam a matriz direto (aproximação rápida dos looks).
  *
- * Se um dia o motor mudar (shader GLSL com LUT/curva real), esta é a
- * fronteira a trocar: preview e exportação continuam idênticos porque
- * ambos passam por aqui.
+ * Se um dia a matriz sumir, preview e exportação continuam idênticos
+ * porque ambos passam pela mesma fronteira ([PhotoExporter]).
  *
  * Matemática: operações padrão de cor (ganhos por canal, escala de
  * exposição, contraste com pivô, matriz de saturação com pesos de
  * luminância Rec. 709). Implementação original, escrita para este app.
  *
- * LIMITAÇÃO HONESTA DA FASE 0 (documentada, não escondida):
+ * LIMITAÇÃO HONESTA (documentada, não escondida):
  * uma matriz 4x5 é linear — ela NÃO consegue selecionar faixas tonais
- * (só realces, só sombras) nem vibrance por pixel. Nesta fase:
+ * (só realces, só sombras), vibrance por pixel, HSL, curva tonal nem
+ * efeitos. Nesta rota:
  * - realces/sombras/brancos/pretos viram um ajuste tonal combinado
  *   (deslocamento + contraste) que se move na direção certa, mas não é
  *   seletivo por faixa;
- * - vibrance vira saturação mais suave (60% da força).
- * A curva tonal real (LUT 256) e o HSL por canal são Fase 1 e exigem
- * shader. Os sliders já existem com os nomes e intervalos finais para
- * a UI não mudar quando o motor melhorar — o que muda é só esta função.
+ * - vibrance vira saturação mais suave (60% da força);
+ * - HSL, curva, claridade, vinheta, grão e desbotado são ignorados.
+ * O shader é o caminho que aplica a receita inteira.
  */
 object RecipeColorMatrix {
 

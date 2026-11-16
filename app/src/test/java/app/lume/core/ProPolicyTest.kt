@@ -40,6 +40,32 @@ class ProPolicyTest {
     }
 
     @Test
+    fun hslChannels_firstFourFreeRestRequirePro() {
+        for (index in 0 until ProPolicy.FREE_HSL_CHANNELS) {
+            assertTrue(
+                "canal $index é grátis",
+                ProPolicy.hslChannelUnlocked(index, isPro = false)
+            )
+        }
+        for (index in ProPolicy.FREE_HSL_CHANNELS until HslChannels.COUNT) {
+            assertFalse(
+                "canal $index exige Pro",
+                ProPolicy.hslChannelUnlocked(index, isPro = false)
+            )
+            assertTrue(
+                "canal $index libera com Pro",
+                ProPolicy.hslChannelUnlocked(index, isPro = true)
+            )
+        }
+    }
+
+    @Test
+    fun hslChannels_outOfRangeIsLocked() {
+        assertFalse(ProPolicy.hslChannelUnlocked(-1, isPro = true))
+        assertFalse(ProPolicy.hslChannelUnlocked(HslChannels.COUNT, isPro = true))
+    }
+
+    @Test
     fun ownPresetLimit_isTenFreeUnlimitedPro() {
         assertEquals(10, ProPolicy.ownPresetLimit(isPro = false))
         assertEquals(Int.MAX_VALUE, ProPolicy.ownPresetLimit(isPro = true))

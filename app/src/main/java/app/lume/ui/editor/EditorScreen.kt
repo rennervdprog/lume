@@ -62,8 +62,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
@@ -73,7 +71,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lume.core.Preset
-import app.lume.core.RecipeColorMatrix
 import app.lume.core.RecipeJson
 import app.lume.imaging.PresetQr
 import app.lume.imaging.ShareHelper
@@ -209,15 +206,9 @@ fun EditorScreen(
                 }
             } else {
                 val preview = state.preview
-                val editedFilter = remember(state.recipe) {
-                    if (state.recipe.isIdentity()) {
-                        null
-                    } else {
-                        ColorFilter.colorMatrix(
-                            ColorMatrix(RecipeColorMatrix.values(state.recipe))
-                        )
-                    }
-                }
+                // Editado = último render do motor; sem render ainda,
+                // mostra o original (primeiro quadro).
+                val edited = state.editedPreview ?: preview
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -244,7 +235,7 @@ fun EditorScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    if (preview != null) {
+                    if (preview != null && edited != null) {
                         if (compareMode == CompareMode.SPLIT) {
                             Image(
                                 bitmap = preview,
@@ -262,10 +253,9 @@ fun EditorScreen(
                                     }
                             ) {
                                 Image(
-                                    bitmap = preview,
+                                    bitmap = edited,
                                     contentDescription = null,
                                     contentScale = ContentScale.Fit,
-                                    colorFilter = editedFilter,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
@@ -334,10 +324,9 @@ fun EditorScreen(
                             }
                         } else {
                             Image(
-                                bitmap = preview,
+                                bitmap = if (showOriginal) preview else edited,
                                 contentDescription = "Foto em edição. Segure para ver a original.",
                                 contentScale = ContentScale.Fit,
-                                colorFilter = if (showOriginal) null else editedFilter,
                                 modifier = Modifier.fillMaxSize()
                             )
                             Surface(
@@ -503,22 +492,24 @@ fun EditorScreen(
                     )
                     EditorTool.COLOR -> ColorPanel(
                         recipe = state.recipe,
+                        isPro = state.isPro,
+                        onDraft = { viewModel.updateRecipeDraft(it) },
+                        onCommit = { viewModel.commitRecipe() },
+                        onReset = { viewModel.resetAdjustments() },
+                        onRequestPaywall = { viewModel.requestPaywall() }
+                    )
+                    EditorTool.EFFECTS -> EffectsPanel(
+                        recipe = state.recipe,
                         onDraft = { viewModel.updateRecipeDraft(it) },
                         onCommit = { viewModel.commitRecipe() },
                         onReset = { viewModel.resetAdjustments() }
                     )
-                    EditorTool.EFFECTS -> SoonPanel(
-                        title = "Efeitos",
-                        description = "Nitidez, grão, vinheta e curva tonal chegam " +
-                            "na Fase 1, com o motor novo. Os ajustes de Luz e " +
-                            "Cor desta versão continuam iguais.",
-                        mockLabels = listOf("Nitidez", "Grão", "Vinheta")
-                    )
                     EditorTool.CROP -> SoonPanel(
                         title = "Cortar",
                         description = "Corte, giro, endireitar e proporções de " +
-                            "rede social chegam na Fase 1. A foto original " +
-                            "nunca é alterada.",
+                            "rede social chegam na próxima entrega da Fase 1 " +
+                            "— a geometria é um estágio separado do motor de " +
+                            "cor. A foto original nunca é alterada.",
                         mockLabels = listOf("Proporção", "Giro")
                     )
                     EditorTool.PRESETS -> PresetsPanel(
