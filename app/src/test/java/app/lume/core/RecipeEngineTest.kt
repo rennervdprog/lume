@@ -55,14 +55,14 @@ class RecipeEngineTest {
     @Test
     fun clamped_normalizesHslSize() {
         val short = Recipe(hsl = listOf(HslChannel(hue = 50f))).clamped()
-        assertEquals(HslChannels.COUNT, short.size)
+        assertEquals(HslChannels.COUNT, short.hsl.size)
         assertEquals(50f, short.hsl[0].hue, 0.001f)
         assertTrue(short.hsl.drop(1).all { it.isIdentity() })
 
         val long = Recipe(
             hsl = List(10) { HslChannel(hue = 10f) }
         ).clamped()
-        assertEquals(HslChannels.COUNT, long.size)
+        assertEquals(HslChannels.COUNT, long.hsl.size)
     }
 
     @Test
