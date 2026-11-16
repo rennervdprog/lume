@@ -16,8 +16,8 @@ android {
         applicationId = "app.lume"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-fase0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -63,6 +63,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.zxing.core)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.compose.ui.tooling)
     ksp(libs.androidx.room.compiler)

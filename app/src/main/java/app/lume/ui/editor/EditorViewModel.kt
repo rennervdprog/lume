@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.lume.core.CopiedEditStore
 import app.lume.core.EditHistory
 import app.lume.core.Preset
 import app.lume.data.PresetLimitReached
@@ -16,6 +17,7 @@ import app.lume.data.DraftRepository
 import app.lume.data.PresetRepository
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
+import app.lume.imaging.Histogram
 import app.lume.imaging.PhotoExporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -40,6 +43,7 @@ data class EditorUiState(
     val paywallRequested: Boolean = false,
     val appliedPresetName: String? = null,
     val presetIntensity: Float = 1f,
+    val histogram: List<Float> = emptyList(),
     val isPro: Boolean = false
 )
 
@@ -52,6 +56,7 @@ class EditorViewModel(
 
     private val history = EditHistory()
     private var previewBitmap: Bitmap? = null
+    private var histogramJob: Job? = null
     private var presetBaseRecipe: Recipe? = null
     private var appliedPreset: Preset? = null
 
@@ -126,6 +131,7 @@ class EditorViewModel(
                     isLoadingPhoto = false
                 )
             }
+            refreshHistogram()
         }
     }
 
@@ -134,6 +140,7 @@ class EditorViewModel(
         history.preview(recipe)
         clearAppliedPresetTracking()
         _uiState.update { it.copy(recipe = history.current) }
+        refreshHistogram()
     }
 
     /** Fim do gesto: confirma a edição no histórico e salva o rascunho. */
@@ -143,6 +150,7 @@ class EditorViewModel(
         _uiState.update {
             it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
         }
+        refreshHistogram()
     }
 
     fun undo() {
@@ -156,6 +164,7 @@ class EditorViewModel(
                 canRedo = history.canRedo
             )
         }
+        refreshHistogram()
     }
 
     fun redo() {
@@ -169,6 +178,7 @@ class EditorViewModel(
                 canRedo = history.canRedo
             )
         }
+        refreshHistogram()
     }
 
     fun resetAdjustments() {
@@ -184,6 +194,7 @@ class EditorViewModel(
                 presetIntensity = 1f
             )
         }
+        refreshHistogram()
     }
 
     fun applyPreset(preset: Preset) {
@@ -201,6 +212,35 @@ class EditorViewModel(
                 presetIntensity = 1f
             )
         }
+        refreshHistogram()
+    }
+
+    /** Volta à receita de antes do preset (cartão "Original" da tira). */
+    fun clearPreset() {
+        val base = presetBaseRecipe ?: return
+        appliedPreset = null
+        presetBaseRecipe = null
+        history.commit(base)
+        persistDraft()
+        _uiState.update {
+            it.copy(
+                recipe = base,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo,
+                appliedPresetName = null,
+                presetIntensity = 1f
+            )
+        }
+        refreshHistogram()
+    }
+
+    /** Copia a edição atual para colar em rascunhos na Biblioteca. */
+    fun copyCurrentEdit() {
+        if (_uiState.value.photoUri == null) return
+        CopiedEditStore.save(history.current, _uiState.value.appliedPresetName)
+        _uiState.update {
+            it.copy(message = "Edição copiada. Cole em rascunhos na Biblioteca.")
+        }
     }
 
     /** Intensidade do preset (0..1): interpola da base ao preset. */
@@ -210,6 +250,7 @@ class EditorViewModel(
         val blended = base.interpolatedTo(preset.recipe, intensity)
         history.preview(blended)
         _uiState.update { it.copy(recipe = blended, presetIntensity = intensity) }
+        refreshHistogram()
     }
 
     fun commitPresetIntensity() {
@@ -218,6 +259,7 @@ class EditorViewModel(
         _uiState.update {
             it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
         }
+        refreshHistogram()
     }
 
     fun savePreset(name: String, collection: String) {
@@ -312,6 +354,18 @@ class EditorViewModel(
                 // Rascunho é conveniência: falhar aqui nunca pode quebrar
                 // a edição. A exportação não depende do rascunho.
             }
+        }
+    }
+
+    /** Recalcula o histograma da foto editada. O cálculo anterior é
+     * cancelado: durante o arrasto de slider, só o último vale. */
+    private fun refreshHistogram() {
+        val bitmap = previewBitmap ?: return
+        val recipe = history.current
+        histogramJob?.cancel()
+        histogramJob = viewModelScope.launch(Dispatchers.Default) {
+            val values = Histogram.compute(bitmap, recipe)
+            _uiState.update { it.copy(histogram = values) }
         }
     }
 

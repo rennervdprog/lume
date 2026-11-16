@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.Preset
 import app.lume.data.PresetLimitReached
+import app.lume.core.CopiedEditStore
 import app.lume.core.RecipeJson
 import app.lume.data.Draft
 import app.lume.data.DraftRepository
@@ -24,6 +25,7 @@ data class LibraryUiState(
     val presets: List<Preset> = emptyList(),
     val drafts: List<Draft> = emptyList(),
     val isPro: Boolean = false,
+    val hasCopiedEdit: Boolean = false,
     val message: String? = null,
     val paywallRequested: Boolean = false
 )
@@ -51,6 +53,11 @@ class LibraryViewModel(
                 }
             }
         }
+        viewModelScope.launch {
+            CopiedEditStore.copied.collect { copied ->
+                _uiState.update { it.copy(hasCopiedEdit = copied != null) }
+            }
+        }
     }
 
     fun deletePreset(id: String) {
@@ -63,6 +70,22 @@ class LibraryViewModel(
     fun deleteDraft(id: String) {
         viewModelScope.launch {
             draftRepository.deleteDraft(id)
+        }
+    }
+
+    /** Aplica a edição copiada no Editor aos rascunhos selecionados. */
+    fun applyCopiedEdit(draftIds: Set<String>) {
+        val copied = CopiedEditStore.copied.value ?: return
+        viewModelScope.launch {
+            var applied = 0
+            val targets = _uiState.value.drafts.filter { it.id in draftIds }
+            for (draft in targets) {
+                draftRepository.saveDraft(draft.photoUri, copied.recipe)
+                applied++
+            }
+            _uiState.update {
+                it.copy(message = "Edição aplicada em $applied rascunho(s).")
+            }
         }
     }
 

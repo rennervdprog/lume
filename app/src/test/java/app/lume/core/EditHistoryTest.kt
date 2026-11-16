@@ -55,6 +55,26 @@ class EditHistoryTest {
     }
 
     @Test
+    fun previewThenCommit_createsSingleUndoEntry() {
+        val history = EditHistory()
+        history.preview(Recipe(exposure = 0.5f))
+        history.preview(Recipe(exposure = 1f))
+        history.commit(history.current)
+        assertTrue(history.canUndo)
+        assertEquals(Recipe.IDENTITY, history.undo())
+        assertFalse(history.canUndo)
+    }
+
+    @Test
+    fun previewThenCommit_backToStart_isNoOp() {
+        val history = EditHistory()
+        history.preview(Recipe(exposure = 1f))
+        history.preview(Recipe.IDENTITY)
+        history.commit(history.current)
+        assertFalse(history.canUndo)
+    }
+
+    @Test
     fun reset_clearsHistory() {
         val history = EditHistory()
         history.commit(Recipe(exposure = 1f))
