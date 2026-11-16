@@ -18,8 +18,8 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até os testes de UI (run 13, commit `cdd0c04`). Home nova
-(0.6.0) escrita localmente, aguardando envio.** Veredito visual
+verde até a home nova (run 14, commit `2d0bcea`). 30 presets novos
+(0.7.0) escritos localmente, aguardando envio.** Veredito visual
 da v3 no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
@@ -69,7 +69,8 @@ verificado (estático + CI + teste no aparelho).
   luz/cor, HSL por cor (4 canais grátis, 8 Pro), chips de curva tonal,
   claridade/vinheta/grão/desbotado, trilho de ferramentas, histograma,
   comparar segurar/dividir, pilha de edição, lote por copiar/colar.
-- **Presets como receitas**: 6 presets iniciais originais, criar/salvar/
+- **Presets como receitas**: 36 presets originais embutidos (6 iniciais
+  + 30 em 7 coleções, aprovados em preview 16/11), criar/salvar/
   aplicar, intensidade 0–100%, segurar para comparar (antes/depois),
   importar/exportar JSON.
 - **Desfazer/refazer + histórico** sobre snapshots da receita (nunca
@@ -118,7 +119,7 @@ verificado (estático + CI + teste no aparelho).
 
 | TODO | Por quê não está nesta entrega |
 |---|---|
-| Conta-gotas HSL, QR por câmera, mais presets | Próximas entregas da Fase 1, sobre este motor |
+| Conta-gotas HSL, QR por câmera | Próximas entregas da Fase 1, sobre este motor |
 | Persistência da geometria em rascunhos | Exige campo novo no banco (destrutivo pré-lançamento é aceitável); hoje a geometria vive só na sessão |
 | Máscaras, remoção, remoção de fundo, IA on-device | Fase 2/3 do roteiro; flags Pro já existem |
 | Lote, RAW/DNG, câmera in-app | Fase 1/2; flags Pro já existem |
@@ -141,7 +142,7 @@ app.lume
 │   ├── ToneCurveLut.kt       Curva → LUT 256 / RGBA do shader
 │   ├── RecipeColorMatrix.kt  Receita → matriz 4x5 (fallback do motor)
 │   ├── RecipeJson.kt         JSON (Room, import/export, futuro sync)
-│   ├── Preset.kt             Preset + 6 presets originais embutidos
+│   ├── Preset.kt             Preset + 36 presets originais embutidos
 │   ├── EditHistory.kt        Undo/redo sobre snapshots da receita
 │   ├── Geometry.kt           Geometria (giro/espelho/endireitar/corte) + matemática pura
 │   └── ProPolicy.kt          Tabela Grátis vs Pro + regras nunca-tranca
