@@ -36,6 +36,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -81,6 +82,7 @@ internal fun SlimSlider(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("slim_slider")
                 .pointerInput(valueRange, widthPx) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
@@ -209,6 +211,7 @@ internal fun SubToolStrip(
                 val selected = id == selectedId
                 Box(
                     modifier = Modifier
+                        .testTag("sub_$id")
                         .clip(RoundedCornerShape(12.dp))
                         .background(
                             if (selected) {

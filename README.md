@@ -18,10 +18,11 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até o redesign do Editor (0.4.0).** Editor v3 (0.5.0) escrito,
-aguardando CI + veredito no aparelho. O Gradle não roda nesta VM (daemon
+verde até o Editor v3 (0.5.0, commit `062563b`).** Veredito visual
+da v3 no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
-(workflow `ci.yml`: assembleDebug + testes unitários). Nada neste
+(workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
+com emulador, igual ao Constância). Nada neste
 README afirma que o app roda — afirma o que foi escrito e o que foi
 verificado (estático + CI + teste no aparelho).
 

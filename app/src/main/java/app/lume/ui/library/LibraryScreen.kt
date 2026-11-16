@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -164,6 +165,7 @@ fun LibraryScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .testTag("library_list")
                 .padding(innerPadding),
             contentPadding = PaddingValues(
                 horizontal = LumeSpacing.md,

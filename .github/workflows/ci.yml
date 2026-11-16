@@ -59,3 +59,85 @@ jobs:
           path: app/build/reports/tests/
           if-no-files-found: ignore
           retention-days: 7
+
+  ui-tests:
+    name: UI tests (emulador)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 9.3.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      # Sem isto o emulador sobe com "-accel off" (emulação pura por
+      # software): boot de ~10 min, System UI em ANR e testes estourando
+      # timeout por fome de CPU. Com KVM, boot ~1 min e velocidade real.
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -la /dev/kvm || true
+
+      # Testes de UI instrumentados num emulador Android de verdade:
+      # tocam nos fluxos (biblioteca, conta, paywall, painéis do
+      # editor) e tiram screenshots. O adb pull roda DENTRO deste step
+      # porque o emulador é desligado quando ele termina.
+      - name: Run UI tests on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: default
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            # Espera o device ficar LEGÍVEL p/ o Gradle antes dos testes:
+            # sem isso, boots lentos falham com "No compatible devices
+            # connected" / "API level 1" sem rodar teste nenhum.
+            # ATENÇÃO: esta action roda o script LINHA A LINHA (um sh -c
+            # por linha) — loops e ifs precisam caber numa linha só.
+            adb wait-for-device
+            for i in $(seq 1 60); do boot=$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r'); sdk=$(adb shell getprop ro.build.version.sdk 2>/dev/null | tr -d '\r'); if [ "$boot" = "1" ] && [ -n "$sdk" ] && [ "$sdk" != "1" ]; then echo "Device pronto: boot=$boot sdk=$sdk"; break; fi; sleep 5; done
+            mkdir -p uitest-screenshots
+            # Monitora o logcat por marcadores UITEST_SHOT e tira screenshot via adb
+            # a cada marcador. Roda em background durante os testes.
+            ( adb logcat -s UITEST_SHOT:D | while read -r line; do marker=$(echo "$line" | grep -oP 'UITEST_SHOT: \K.*' | tr -d '\r'); if [ -n "$marker" ]; then adb exec-out screencap -p > "uitest-screenshots/${marker}.png" 2>/dev/null || true; fi; done ) & echo $! > /tmp/logcat_pid
+            gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace --max-workers=2 || echo FAILED > /tmp/uitest_failed
+            kill $(cat /tmp/logcat_pid) || true
+            ls -la ./uitest-screenshots || true
+            if [ -f /tmp/uitest_failed ]; then exit 1; fi
+
+      - name: Upload UI test screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lume-ui-test-screenshots-${{ github.sha }}
+          path: uitest-screenshots/
+          if-no-files-found: warn
+          retention-days: 14
+
+      # Relatórios dos testes instrumentados (XML/HTML com o stack trace
+      # completo de cada falha) — sem isso, o log do console só mostra
+      # a primeira linha da exceção e o diagnóstico fica no escuro.
+      - name: Upload UI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lume-ui-test-reports-${{ github.sha }}
+          path: |
+            app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+          if-no-files-found: warn
+          retention-days: 14
