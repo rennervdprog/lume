@@ -7,6 +7,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.lume.core.BuiltInPresets
@@ -68,6 +70,17 @@ class LumePanelsUiTest {
         composeRule.onNodeWithTag("slim_slider").assertIsDisplayed()
         // O rótulo aparece 2x: na tira de sub-ferramentas e no slider.
         composeRule.onAllNodesWithText("Luz").assertCountEquals(2)
+        // A tira rola: o último item pode nascer fora da viewport e a
+        // LazyRow só o compõe depois do scroll (falha da run #12).
+        var tries = 0
+        while (composeRule.onAllNodesWithTag("sub_contrast")
+            .fetchSemanticsNodes().isEmpty() && tries < 4
+        ) {
+            composeRule.onNodeWithTag("sub_strip")
+                .performTouchInput { swipeLeft() }
+            composeRule.waitForIdle()
+            tries++
+        }
         composeRule.onNodeWithTag("sub_contrast").performClick()
         composeRule.onAllNodesWithText("Clima").assertCountEquals(2)
         uitestShot("10_luz_simples")
@@ -90,7 +103,9 @@ class LumePanelsUiTest {
             }
         }
         composeRule.onNodeWithText("Linear").assertIsDisplayed()
-        composeRule.onNodeWithText("Contraste").assertIsDisplayed()
+        // "Contraste" aparece 2x: na tira (sub-ferramenta) e no chip
+        // da curva — por isso a contagem, não a unicidade.
+        composeRule.onAllNodesWithText("Contraste").assertCountEquals(2)
         composeRule.onNodeWithText("Fade").assertIsDisplayed()
         composeRule.onNodeWithText("Suave").assertIsDisplayed()
         uitestShot("11_luz_curva")

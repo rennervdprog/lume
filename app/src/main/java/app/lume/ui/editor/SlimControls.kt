@@ -203,7 +203,7 @@ internal fun SubToolStrip(
         verticalAlignment = Alignment.CenterVertically
     ) {
         LazyRow(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).testTag("sub_strip"),
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {

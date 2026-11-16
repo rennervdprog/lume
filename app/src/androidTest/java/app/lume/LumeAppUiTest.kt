@@ -35,11 +35,11 @@ class LumeAppUiTest {
     private fun nodesWith(text: String) =
         composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
 
-    /** Rola a lista da Biblioteca até o texto existir. */
-    private fun awaitText(text: String, maxSwipes: Int = 6) {
+    /** Rola a lista indicada até o texto existir. */
+    private fun awaitText(text: String, listTag: String, maxSwipes: Int = 8) {
         var tries = 0
         while (!nodesWith(text) && tries < maxSwipes) {
-            composeRule.onNodeWithTag("library_list")
+            composeRule.onNodeWithTag(listTag)
                 .performTouchInput { swipeUp() }
             composeRule.waitForIdle()
             tries++
@@ -51,7 +51,7 @@ class LumeAppUiTest {
     fun bibliotecaAbreComHeroEPresets() {
         composeRule.onNodeWithText("Editar uma foto").assertIsDisplayed()
         composeRule.onNodeWithText("Abrir foto").assertIsDisplayed()
-        awaitText("Presets")
+        awaitText("Presets", "library_list")
         composeRule.onNodeWithText("Luz da Manhã").assertExists()
         composeRule.onNodeWithText("Cinza Elegante").assertExists()
         uitestShot("01_biblioteca")
@@ -77,6 +77,8 @@ class LumeAppUiTest {
         composeRule.waitUntil(timeoutMillis = 8000) {
             nodesWith("Grátis de verdade. Pro para quem vive de foto.")
         }
+        // Os botões ficam abaixo da tabela: rola até eles serem compostos.
+        awaitText("Assinar o Pro", "paywall_list")
         composeRule.onNodeWithText("Assinar o Pro").assertExists()
         composeRule.onNodeWithText("Continuar grátis").assertExists()
         uitestShot("03_paywall")
