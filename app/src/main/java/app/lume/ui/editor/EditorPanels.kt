@@ -773,13 +773,16 @@ internal fun HistoryPanel(
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
         val hasGeometry = !geometry.isIdentity()
-        PanelHeader(title = "Histórico") {
-            if (steps.isNotEmpty() || hasGeometry) {
-                TextButton(onClick = onReset) {
-                    Text("Limpar tudo")
+        PanelHeader(
+            title = "Histórico",
+            trailing = {
+                if (steps.isNotEmpty() || hasGeometry) {
+                    TextButton(onClick = onReset) {
+                        Text("Limpar tudo")
+                    }
                 }
             }
-        }
+        )
         if (steps.isEmpty() && !hasGeometry) {
             Text(
                 text = "Nenhuma edição ainda. Mexa num controle ou aplique " +
