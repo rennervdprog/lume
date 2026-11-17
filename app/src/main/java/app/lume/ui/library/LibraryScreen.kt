@@ -150,15 +150,15 @@ private data class HomeFunction(
 private val HOME_FUNCTIONS = listOf(
     HomeFunction(
         "light", "Luz", Icons.Filled.WbSunny,
-        PendingEditorTarget.Target(EditorTool.LIGHT, lightSub = "exposure")
+        PendingEditorTarget.Target(EditorTool.ADJUST, adjustSub = "exposure")
     ),
     HomeFunction(
         "color", "Cor", Icons.Filled.Palette,
-        PendingEditorTarget.Target(EditorTool.COLOR, colorSub = "temperature")
+        PendingEditorTarget.Target(EditorTool.ADJUST, adjustSub = "temperature")
     ),
     HomeFunction(
         "effects", "Efeitos", Icons.Filled.AutoAwesome,
-        PendingEditorTarget.Target(EditorTool.EFFECTS, effectsSub = "clarity")
+        PendingEditorTarget.Target(EditorTool.ADJUST, adjustSub = "clarity")
     ),
     HomeFunction(
         "crop", "Cortar", Icons.Filled.Crop,
@@ -166,11 +166,11 @@ private val HOME_FUNCTIONS = listOf(
     ),
     HomeFunction(
         "hsl", "HSL", Icons.Filled.ColorLens,
-        PendingEditorTarget.Target(EditorTool.COLOR, colorSub = "hsl")
+        PendingEditorTarget.Target(EditorTool.ADJUST, adjustSub = "hsl")
     ),
     HomeFunction(
         "curve", "Curva", Icons.Filled.ShowChart,
-        PendingEditorTarget.Target(EditorTool.LIGHT, lightSub = "curve")
+        PendingEditorTarget.Target(EditorTool.ADJUST, adjustSub = "curve")
     ),
     HomeFunction(
         "history", "Histórico", Icons.Filled.History,
@@ -178,7 +178,7 @@ private val HOME_FUNCTIONS = listOf(
     ),
     HomeFunction(
         "qr", "QR", Icons.Filled.QrCode2,
-        PendingEditorTarget.Target(EditorTool.PRESETS)
+        PendingEditorTarget.Target(EditorTool.FILTER)
     )
 )
 
@@ -342,7 +342,7 @@ fun LibraryScreen(
                                 bannerPreset?.let { preset ->
                                     pickWith(
                                         PendingEditorTarget.Target(
-                                            EditorTool.LIGHT,
+                                            EditorTool.ADJUST,
                                             presetId = preset.id
                                         )
                                     )

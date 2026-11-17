@@ -18,17 +18,14 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até o motor GPUImage (run 17, commit `adbd1b2`, 0.8.0, APK
-entregue). Inicial v3 (0.9.0) escrita localmente, aguardando envio:**
-wordmark "Lume.", banner com wipe antes/depois + segurar para ver o
-original, heróis sobre o banner, "Continuar editando", tira escura
-com ícones azuis. Veredito do HSL no aparelho pendente. Correção
-das categorias do Presets (0.9.1) escrita localmente, aguardando
-envio logo atrás do 0.9.0: categorias em texto com traço azul,
-Embaralhar/QR/Salvar em linha própria, QR desativado sem preset.
-Fotos genéricas nos presets (0.9.2) escritas localmente,
-aguardando envio: retrato + paisagem em drawable-nodpi como
-amostra quando não há rascunho (a foto do usuário vence). O Gradle não roda nesta VM (daemon
+verde até as fotos genéricas nos presets (run 20, commit `ec42f4e`,
+0.9.2, APK entregue). Editor v4 com nomes novos (0.10.0) escrito
+localmente, aguardando envio:** trilho com 4 ferramentas (Cortar,
+Filtro, Ajustar, Histórico), Luz+Cor+Efeitos unificados no Ajustar
+com trilho de ícones rolável, slider com botão de zerar, botão de
+comparar (segurar) e bolha do valor, proporções do Cortar todas
+visíveis com o desenho do formato, "Limpar tudo" no Histórico.
+Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste

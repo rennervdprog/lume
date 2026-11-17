@@ -10,6 +10,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,25 +19,37 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Compare
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -138,108 +151,293 @@ internal fun SlimSlider(
 }
 
 /**
- * Linha do slider fino: rótulo, slider e valor com sinal. Toque
- * duplo no rótulo zera o controle (quando [onReset] existe).
+ * Linha do slider fino (v4): botão de zerar à esquerda, slider com
+ * a bolha do valor acima do polegar, botão de comparar à direita
+ * (segurar mostra a foto original). [caption] é o nome do controle
+ * quando ele não está na tira de sub-ferramentas (ex.: HSL,
+ * Intensidade, Endireitar). O gesto escondido de antes — toque
+ * duplo no rótulo para zerar — não existe mais.
  */
 @Composable
 internal fun SlimSliderRow(
-    label: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     formatValue: (Float) -> String,
+    caption: String? = null,
     onReset: (() -> Unit)? = null,
+    onCompareChange: ((Boolean) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        if (caption != null) {
+            Text(
+                text = caption,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+        ) {
+            if (onReset != null) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .clickable(onClick = onReset)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Zerar",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+            BoxWithConstraints(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(54.dp)
+            ) {
+                val density = LocalDensity.current
+                val widthPx = with(density) { maxWidth.toPx() }
+                val span = valueRange.endInclusive - valueRange.start
+                val fraction = if (span > 0f) {
+                    ((value - valueRange.start) / span).coerceIn(0f, 1f)
+                } else {
+                    0f
+                }
+                var bubbleWidthPx by remember { mutableIntStateOf(0) }
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            val maxX = (widthPx - bubbleWidthPx).coerceAtLeast(0f)
+                            IntOffset(
+                                (widthPx * fraction - bubbleWidthPx / 2f)
+                                    .coerceIn(0f, maxX).roundToInt(),
+                                0
+                            )
+                        }
+                        .onGloballyPositioned { bubbleWidthPx = it.size.width }
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .padding(horizontal = 9.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = formatValue(value),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.Black,
+                        maxLines = 1
+                    )
+                }
+                SlimSlider(
+                    value = value,
+                    onValueChange = onValueChange,
+                    valueRange = valueRange,
+                    onValueChangeFinished = onValueChangeFinished,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                )
+            }
+            if (onCompareChange != null) {
+                val latestOnCompareChange by rememberUpdatedState(onCompareChange)
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = {
+                                    latestOnCompareChange(true)
+                                    try {
+                                        awaitRelease()
+                                    } finally {
+                                        latestOnCompareChange(false)
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Compare,
+                        contentDescription = "Segure para comparar",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Uma sub-ferramenta do trilho de ícones: id, rótulo e ícone. */
+internal data class IconSubOption(
+    val id: String,
+    val label: String,
+    val icon: ImageVector
+)
+
+/**
+ * Trilho de sub-ferramentas com ícones (v4): ícone + rótulo, a
+ * selecionada ganha a cor primária e um ponto azul embaixo. A tira
+ * rola até a selecionada sozinha (atalhos da Home que caem no fim
+ * do trilho, como HSL e Curva). A tag da tira é "sub_strip" e a
+ * de cada item é "sub_<id>".
+ */
+@Composable
+internal fun IconSubRail(
+    options: List<IconSubOption>,
+    selectedId: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+    val selectedIndex = options.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
+    LaunchedEffect(selectedId) {
+        listState.animateScrollToItem(selectedIndex)
+    }
+    LazyRow(
+        state = listState,
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("sub_strip"),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        contentPadding = PaddingValues(vertical = 2.dp)
+    ) {
+        items(options, key = { it.id }) { option ->
+            val selected = option.id == selectedId
+            val tint = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .testTag("sub_${option.id}")
+                    .width(64.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onSelect(option.id) }
+                    .padding(vertical = 6.dp)
+            ) {
+                Icon(
+                    imageVector = option.icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = option.label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    ),
+                    color = tint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 3.dp)
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Cabeçalho de painel (v4): título à esquerda e uma ação à
+ * direita (ex.: o segmento Simples/Pro, o "Limpar tudo").
+ */
+@Composable
+internal fun PanelHeader(
+    title: String,
+    trailing: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
-            text = label,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .widthIn(max = 118.dp)
-                .pointerInput(onReset) {
-                    detectTapGestures(onDoubleTap = { onReset?.invoke() })
-                }
+            text = title,
+            style = MaterialTheme.typography.titleSmall
         )
-        SlimSlider(
-            value = value,
-            onValueChange = onValueChange,
-            valueRange = valueRange,
-            onValueChangeFinished = onValueChangeFinished,
-            modifier = Modifier.weight(1f)
-        )
-        Text(
-            text = formatValue(value),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.widthIn(min = 44.dp)
-        )
+        if (trailing != null) {
+            trailing()
+        }
     }
 }
 
 /**
- * Fileira de sub-ferramentas rolável (só texto): a selecionada ganha
- * a cor primária e um fundo suave. [trailing] é um conteúdo fixo à
- * direita (ex.: o segmento Simples/Pro), fora da rolagem.
+ * Uma aba de texto: texto puro, sem pílula. A selecionada leva o
+ * traço azul de 2dp; a não selecionada reserva o mesmo espaço com
+ * o traço transparente, para a fileira nunca pular. Usada nas
+ * categorias de filtros e nas abas do Cortar.
  */
 @Composable
-internal fun SubToolStrip(
-    options: List<Pair<String, String>>,
-    selectedId: String,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-    trailing: (@Composable () -> Unit)? = null
+internal fun TextTab(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        LazyRow(
-            modifier = Modifier.weight(1f).testTag("sub_strip"),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            contentPadding = PaddingValues(vertical = 2.dp)
-        ) {
-            items(options, key = { it.first }) { (id, label) ->
-                val selected = id == selectedId
-                Box(
-                    modifier = Modifier
-                        .testTag("sub_$id")
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(
-                            if (selected) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-                            } else {
-                                Color.Transparent
-                            }
-                        )
-                        .clickable { onSelect(id) }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
-            }
-        }
-        if (trailing != null) {
-            Box(modifier = Modifier.padding(start = LumeSpacing.xs)) {
-                trailing()
-            }
-        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            ),
+            color = if (selected) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .fillMaxWidth()
+                .height(2.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(
+                    if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color.Transparent
+                    }
+                )
+        )
     }
 }
 

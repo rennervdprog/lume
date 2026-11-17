@@ -25,16 +25,29 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Brightness3
+import androidx.compose.material.icons.filled.Brightness7
+import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.BrightnessLow
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ColorLens
+import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.FilterFrames
+import androidx.compose.material.icons.filled.Gradient
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.InvertColors
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.Thermostat
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -60,7 +73,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -94,7 +106,7 @@ internal fun formatExposure(value: Float): String {
 }
 
 enum class EditorTool {
-    LIGHT, COLOR, EFFECTS, CROP, PRESETS, HISTORY
+    CROP, FILTER, ADJUST, HISTORY
 }
 
 /** Trilho de ferramentas: ícone + rótulo, uma ferramenta por vez. */
@@ -105,11 +117,9 @@ internal fun EditorToolRail(
     modifier: Modifier = Modifier
 ) {
     val tools = listOf(
-        Triple(EditorTool.LIGHT, "Luz", Icons.Filled.WbSunny),
-        Triple(EditorTool.COLOR, "Cor", Icons.Filled.Palette),
-        Triple(EditorTool.EFFECTS, "Efeitos", Icons.Filled.AutoFixHigh),
         Triple(EditorTool.CROP, "Cortar", Icons.Filled.Crop),
-        Triple(EditorTool.PRESETS, "Presets", Icons.Filled.Style),
+        Triple(EditorTool.FILTER, "Filtro", Icons.Filled.Style),
+        Triple(EditorTool.ADJUST, "Ajustar", Icons.Filled.Tune),
         Triple(EditorTool.HISTORY, "Histórico", Icons.Filled.History)
     )
     Row(
@@ -143,53 +153,82 @@ internal fun EditorToolRail(
                     color = tint,
                     textAlign = TextAlign.Center
                 )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 3.dp)
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isSelected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                Color.Transparent
+                            }
+                        )
+                )
             }
         }
     }
 }
 
 /**
- * Painel Luz (v3): tirinha de histograma + UM slider fino do
- * sub-controle selecionado + fileira de sub-ferramentas rolável.
- * O X/✓ vive nos botões flutuantes sobre a foto, não aqui.
+ * Painel Ajustar (v4): todos os controles de luz, cor e efeitos num
+ * só lugar, com trilho de ícones rolável. Simples mostra 5
+ * controles; Pro abre os 15, com HSL e Curva no fim do trilho. O
+ * histograma fica sempre visível no topo do painel.
  */
-
 @Composable
-internal fun LightPanel(
+internal fun AdjustPanel(
     recipe: Recipe,
     histogram: List<Float>,
+    isPro: Boolean,
     simpleMode: Boolean,
     onSimpleModeChange: (Boolean) -> Unit,
     selectedSub: String,
     onSubSelect: (String) -> Unit,
+    hslChannel: Int,
+    onHslChannelSelect: (Int) -> Unit,
+    hslAttr: String,
+    onHslAttrSelect: (String) -> Unit,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
+    onRequestPaywall: () -> Unit,
+    onCompareChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Simples: 4 controles sobre a MESMA receita. Nada se perde ao
+    // Simples: 5 controles sobre a MESMA receita. Nada se perde ao
     // trocar para o modo Pro — só a densidade muda.
     val options = if (simpleMode) {
         listOf(
-            "exposure" to "Luz",
-            "saturation" to "Cor",
-            "temperature" to "Calor",
-            "contrast" to "Clima"
+            IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
+            IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
+            IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
+            IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
+            IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong)
         )
     } else {
         listOf(
-            "exposure" to "Exposição",
-            "contrast" to "Contraste",
-            "highlights" to "Realces",
-            "shadows" to "Sombras",
-            "whites" to "Brancos",
-            "blacks" to "Pretos",
-            "curve" to "Curva"
+            IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
+            IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
+            IconSubOption("highlights", "Realces", Icons.Filled.BrightnessHigh),
+            IconSubOption("shadows", "Sombras", Icons.Filled.BrightnessLow),
+            IconSubOption("whites", "Brancos", Icons.Filled.Brightness7),
+            IconSubOption("blacks", "Pretos", Icons.Filled.Brightness3),
+            IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
+            IconSubOption("tint", "Matiz", Icons.Filled.InvertColors),
+            IconSubOption("vibrance", "Vibração", Icons.Filled.Palette),
+            IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
+            IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong),
+            IconSubOption("vignette", "Vinheta", Icons.Filled.FilterFrames),
+            IconSubOption("fade", "Desbotado", Icons.Filled.Gradient),
+            IconSubOption("hsl", "HSL", Icons.Filled.ColorLens),
+            IconSubOption("curve", "Curva", Icons.Filled.ShowChart)
         )
     }
-    val effectiveSub = if (options.any { it.first == selectedSub }) {
+    val effectiveSub = if (options.any { it.id == selectedSub }) {
         selectedSub
     } else {
-        options.first().first
+        options.first().id
     }
     Column(
         modifier = modifier
@@ -197,93 +236,155 @@ internal fun LightPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        PanelHeader(
+            title = "Ajustar",
+            trailing = {
+                MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
+            }
+        )
         HistogramStrip(values = histogram)
         when (effectiveSub) {
-            "exposure" -> SlimSliderRow(
-                label = if (simpleMode) "Luz" else "Exposição",
-                value = recipe.exposure,
-                valueRange = -2f..2f,
-                onValueChange = { onDraft(recipe.copy(exposure = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatExposure,
-                onReset = { onDraft(recipe.copy(exposure = 0f)); onCommit() }
-            )
-            "saturation" -> SlimSliderRow(
-                label = "Cor",
-                value = recipe.saturation,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(saturation = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
-            )
-            "temperature" -> SlimSliderRow(
-                label = "Calor",
-                value = recipe.temperature,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(temperature = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() }
-            )
-            "contrast" -> SlimSliderRow(
-                label = if (simpleMode) "Clima" else "Contraste",
-                value = recipe.contrast,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(contrast = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(contrast = 0f)); onCommit() }
-            )
-            "highlights" -> SlimSliderRow(
-                label = "Realces",
-                value = recipe.highlights,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(highlights = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(highlights = 0f)); onCommit() }
-            )
-            "shadows" -> SlimSliderRow(
-                label = "Sombras",
-                value = recipe.shadows,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(shadows = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(shadows = 0f)); onCommit() }
-            )
-            "whites" -> SlimSliderRow(
-                label = "Brancos",
-                value = recipe.whites,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(whites = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(whites = 0f)); onCommit() }
-            )
-            "blacks" -> SlimSliderRow(
-                label = "Pretos",
-                value = recipe.blacks,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(blacks = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(blacks = 0f)); onCommit() }
+            "hsl" -> HslSection(
+                recipe = recipe,
+                isPro = isPro,
+                selectedChannel = hslChannel,
+                onChannelSelect = onHslChannelSelect,
+                selectedAttr = hslAttr,
+                onAttrSelect = onHslAttrSelect,
+                onDraft = onDraft,
+                onCommit = onCommit,
+                onRequestPaywall = onRequestPaywall,
+                onCompareChange = onCompareChange
             )
             "curve" -> CurveSection(
                 recipe = recipe,
                 onDraft = onDraft,
                 onCommit = onCommit
             )
+            "exposure" -> SlimSliderRow(
+                value = recipe.exposure,
+                valueRange = -2f..2f,
+                onValueChange = { onDraft(recipe.copy(exposure = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatExposure,
+                onReset = { onDraft(recipe.copy(exposure = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "contrast" -> SlimSliderRow(
+                value = recipe.contrast,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(contrast = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(contrast = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "highlights" -> SlimSliderRow(
+                value = recipe.highlights,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(highlights = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(highlights = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "shadows" -> SlimSliderRow(
+                value = recipe.shadows,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(shadows = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(shadows = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "whites" -> SlimSliderRow(
+                value = recipe.whites,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(whites = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(whites = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "blacks" -> SlimSliderRow(
+                value = recipe.blacks,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(blacks = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(blacks = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "temperature" -> SlimSliderRow(
+                value = recipe.temperature,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(temperature = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "tint" -> SlimSliderRow(
+                value = recipe.tint,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(tint = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(tint = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "vibrance" -> SlimSliderRow(
+                value = recipe.vibrance,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(vibrance = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(vibrance = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "saturation" -> SlimSliderRow(
+                value = recipe.saturation,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(saturation = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "clarity" -> SlimSliderRow(
+                value = recipe.clarity,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(clarity = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(clarity = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            // Vinheta 0..100: o filtro da GPUImage só escurece os
+            // cantos — negativo seria um slider que não faz nada.
+            "vignette" -> SlimSliderRow(
+                value = recipe.vignette.coerceAtLeast(0f),
+                valueRange = 0f..100f,
+                onValueChange = { onDraft(recipe.copy(vignette = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(vignette = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
+            "fade" -> SlimSliderRow(
+                value = recipe.fade,
+                valueRange = -100f..100f,
+                onValueChange = { onDraft(recipe.copy(fade = it)) },
+                onValueChangeFinished = onCommit,
+                formatValue = ::formatSigned,
+                onReset = { onDraft(recipe.copy(fade = 0f)); onCommit() },
+                onCompareChange = onCompareChange
+            )
         }
-        SubToolStrip(
+        IconSubRail(
             options = options,
             selectedId = effectiveSub,
-            onSelect = onSubSelect,
-            trailing = {
-                MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
-            }
+            onSelect = onSubSelect
         )
     }
 }
@@ -464,6 +565,7 @@ internal fun HslSection(
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
     onRequestPaywall: () -> Unit,
+    onCompareChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val channels = HslChannels.normalize(recipe.hsl)
@@ -562,176 +664,14 @@ internal fun HslSection(
             }
         }
         SlimSliderRow(
-            label = "${HslChannels.NAMES[selectedChannel]} · $attrLabel",
+            caption = "${HslChannels.NAMES[selectedChannel]} · $attrLabel",
             value = attrValue,
             valueRange = -100f..100f,
             onValueChange = { onDraft(attrUpdate(it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(attrUpdate(0f)); onCommit() }
-        )
-    }
-}
-
-@Composable
-internal fun ColorPanel(
-    recipe: Recipe,
-    isPro: Boolean,
-    selectedSub: String,
-    onSubSelect: (String) -> Unit,
-    hslChannel: Int,
-    onHslChannelSelect: (Int) -> Unit,
-    hslAttr: String,
-    onHslAttrSelect: (String) -> Unit,
-    onDraft: (Recipe) -> Unit,
-    onCommit: () -> Unit,
-    onRequestPaywall: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val options = listOf(
-        "temperature" to "Temperatura",
-        "tint" to "Matiz",
-        "vibrance" to "Vibração",
-        "saturation" to "Saturação",
-        "hsl" to "HSL"
-    )
-    val effectiveSub = if (options.any { it.first == selectedSub }) {
-        selectedSub
-    } else {
-        options.first().first
-    }
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = LumeSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-    ) {
-        if (effectiveSub == "hsl") {
-            HslSection(
-                recipe = recipe,
-                isPro = isPro,
-                selectedChannel = hslChannel,
-                onChannelSelect = onHslChannelSelect,
-                selectedAttr = hslAttr,
-                onAttrSelect = onHslAttrSelect,
-                onDraft = onDraft,
-                onCommit = onCommit,
-                onRequestPaywall = onRequestPaywall
-            )
-        } else {
-            when (effectiveSub) {
-                "temperature" -> SlimSliderRow(
-                    label = "Temperatura",
-                    value = recipe.temperature,
-                    valueRange = -100f..100f,
-                    onValueChange = { onDraft(recipe.copy(temperature = it)) },
-                    onValueChangeFinished = onCommit,
-                    formatValue = ::formatSigned,
-                    onReset = { onDraft(recipe.copy(temperature = 0f)); onCommit() }
-                )
-                "tint" -> SlimSliderRow(
-                    label = "Matiz",
-                    value = recipe.tint,
-                    valueRange = -100f..100f,
-                    onValueChange = { onDraft(recipe.copy(tint = it)) },
-                    onValueChangeFinished = onCommit,
-                    formatValue = ::formatSigned,
-                    onReset = { onDraft(recipe.copy(tint = 0f)); onCommit() }
-                )
-                "vibrance" -> SlimSliderRow(
-                    label = "Vibração",
-                    value = recipe.vibrance,
-                    valueRange = -100f..100f,
-                    onValueChange = { onDraft(recipe.copy(vibrance = it)) },
-                    onValueChangeFinished = onCommit,
-                    formatValue = ::formatSigned,
-                    onReset = { onDraft(recipe.copy(vibrance = 0f)); onCommit() }
-                )
-                "saturation" -> SlimSliderRow(
-                    label = "Saturação",
-                    value = recipe.saturation,
-                    valueRange = -100f..100f,
-                    onValueChange = { onDraft(recipe.copy(saturation = it)) },
-                    onValueChangeFinished = onCommit,
-                    formatValue = ::formatSigned,
-                    onReset = { onDraft(recipe.copy(saturation = 0f)); onCommit() }
-                )
-            }
-        }
-        SubToolStrip(
-            options = options,
-            selectedId = effectiveSub,
-            onSelect = onSubSelect
-        )
-    }
-}
-
-/**
- * Efeitos globais do motor: claridade, vinheta, grão e desbotado.
- * Todos livres (regra em [ProPolicy]: efeitos e detalhe são totais).
- */
-@Composable
-internal fun EffectsPanel(
-    recipe: Recipe,
-    selectedSub: String,
-    onSubSelect: (String) -> Unit,
-    onDraft: (Recipe) -> Unit,
-    onCommit: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    // Sem "Grão": a GPUImage não tem filtro de grão e o campo fica só
-    // nos dados (ver GpuImagePipeline). Sem slider falso.
-    val options = listOf(
-        "clarity" to "Claridade",
-        "vignette" to "Vinheta",
-        "fade" to "Desbotado"
-    )
-    val effectiveSub = if (options.any { it.first == selectedSub }) {
-        selectedSub
-    } else {
-        options.first().first
-    }
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = LumeSpacing.md),
-        verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-    ) {
-        when (effectiveSub) {
-            "clarity" -> SlimSliderRow(
-                label = "Claridade",
-                value = recipe.clarity,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(clarity = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(clarity = 0f)); onCommit() }
-            )
-            // Vinheta 0..100: o filtro da GPUImage só escurece os
-            // cantos — negativo seria um slider que não faz nada.
-            "vignette" -> SlimSliderRow(
-                label = "Vinheta",
-                value = recipe.vignette.coerceAtLeast(0f),
-                valueRange = 0f..100f,
-                onValueChange = { onDraft(recipe.copy(vignette = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(vignette = 0f)); onCommit() }
-            )
-            "fade" -> SlimSliderRow(
-                label = "Desbotado",
-                value = recipe.fade,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(fade = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(fade = 0f)); onCommit() }
-            )
-        }
-        SubToolStrip(
-            options = options,
-            selectedId = effectiveSub,
-            onSelect = onSubSelect
+            onReset = { onDraft(attrUpdate(0f)); onCommit() },
+            onCompareChange = onCompareChange
         )
     }
 }
@@ -832,11 +772,14 @@ internal fun HistoryPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        Text(
-            text = "Pilha de edição",
-            style = MaterialTheme.typography.titleSmall
-        )
         val hasGeometry = !geometry.isIdentity()
+        PanelHeader(title = "Histórico") {
+            if (steps.isNotEmpty() || hasGeometry) {
+                TextButton(onClick = onReset) {
+                    Text("Limpar tudo")
+                }
+            }
+        }
         if (steps.isEmpty() && !hasGeometry) {
             Text(
                 text = "Nenhuma edição ainda. Mexa num controle ou aplique " +
@@ -916,24 +859,15 @@ internal fun HistoryPanel(
                 }
             }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = onCopyEdit) {
-                    Text("Copiar edição")
-                }
-                TextButton(onClick = onReset) {
-                    Text("Redefinir tudo")
-                }
+            OutlinedButton(onClick = onCopyEdit) {
+                Text("Copiar edição")
             }
         }
     }
 }
 
 @Composable
-internal fun PresetsPanel(
+internal fun FilterPanel(
     presets: List<Preset>,
     preview: ImageBitmap?,
     appliedPresetName: String?,
@@ -945,6 +879,7 @@ internal fun PresetsPanel(
     onSavePresetClick: () -> Unit,
     onSharePresetClick: (Preset) -> Unit,
     onShuffleClick: () -> Unit,
+    onCompareChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
@@ -961,6 +896,10 @@ internal fun PresetsPanel(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        PanelHeader(
+            title = "Filtro",
+            modifier = Modifier.padding(horizontal = LumeSpacing.md)
+        )
         // Categorias: texto puro com traço azul na selecionada, sem
         // pílulas — a fileira nunca muda de altura nem pula.
         LazyRow(
@@ -968,14 +907,14 @@ internal fun PresetsPanel(
             horizontalArrangement = Arrangement.spacedBy(LumeSpacing.md)
         ) {
             item {
-                CategoryTab(
+                TextTab(
                     label = "Todos",
                     selected = selectedCollection == null,
                     onClick = { selectedCollection = null }
                 )
             }
             items(collections) { collection ->
-                CategoryTab(
+                TextTab(
                     label = collection,
                     selected = selectedCollection == collection,
                     onClick = { selectedCollection = collection }
@@ -1098,63 +1037,20 @@ internal fun PresetsPanel(
         }
         if (appliedPreset != null) {
             SlimSliderRow(
-                label = "Intensidade",
+                caption = "Intensidade",
                 value = presetIntensity * 100f,
                 valueRange = 0f..100f,
                 onValueChange = { onIntensityChange(it / 100f) },
                 onValueChangeFinished = onIntensityFinished,
                 formatValue = { "${it.roundToInt()}%" },
+                onReset = {
+                    onIntensityChange(1f)
+                    onIntensityFinished()
+                },
+                onCompareChange = onCompareChange,
                 modifier = Modifier.padding(horizontal = LumeSpacing.md)
             )
         }
-    }
-}
-
-/**
- * Uma aba de categoria: texto puro, sem pílula. A selecionada leva
- * o traço azul de 2dp; a não selecionada reserva o mesmo espaço
- * com o traço transparente, para a fileira nunca pular.
- */
-@Composable
-private fun CategoryTab(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge.copy(
-                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
-            ),
-            color = if (selected) {
-                MaterialTheme.colorScheme.onSurface
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            },
-            maxLines = 1
-        )
-        Box(
-            modifier = Modifier
-                .padding(top = 4.dp)
-                .fillMaxWidth()
-                .height(2.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(
-                    if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color.Transparent
-                    }
-                )
-        )
     }
 }
 

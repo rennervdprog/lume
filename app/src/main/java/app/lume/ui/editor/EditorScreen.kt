@@ -95,7 +95,7 @@ fun EditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var selectedTool by remember { mutableStateOf(EditorTool.LIGHT) }
+    var selectedTool by remember { mutableStateOf(EditorTool.ADJUST) }
     var simpleMode by remember { mutableStateOf(true) }
     var splitMode by remember { mutableStateOf(false) }
     var splitFraction by remember { mutableFloatStateOf(0.5f) }
@@ -105,9 +105,7 @@ fun EditorScreen(
     var showOriginal by remember { mutableStateOf(false) }
     var panelVisible by remember { mutableStateOf(true) }
     var cropTab by remember { mutableStateOf(CropTab.CROP) }
-    var lightSub by remember { mutableStateOf("exposure") }
-    var colorSub by remember { mutableStateOf("temperature") }
-    var effectsSub by remember { mutableStateOf("clarity") }
+    var adjustSub by remember { mutableStateOf("exposure") }
     var hslChannel by remember { mutableIntStateOf(0) }
     var hslAttr by remember { mutableStateOf("hue") }
     var pendingPresetId by remember { mutableStateOf<String?>(null) }
@@ -133,14 +131,13 @@ fun EditorScreen(
     }
 
     // Alvo pendente da Home: a grade abre o Editor já na ferramenta
-    // tocada (e na subferramenta, quando há: HSL, Curva). Consumido
-    // uma vez ao entrar; sem pedido, abre no padrão (Luz).
+    // tocada (e na subferramenta do Ajustar, quando há: HSL, Curva).
+    // Consumido uma vez ao entrar; sem pedido, abre no padrão
+    // (Ajustar, na Exposição).
     LaunchedEffect(Unit) {
         PendingEditorTarget.take()?.let { target ->
             selectedTool = target.tool
-            target.lightSub?.let { lightSub = it }
-            target.colorSub?.let { colorSub = it }
-            target.effectsSub?.let { effectsSub = it }
+            target.adjustSub?.let { adjustSub = it }
             target.presetId?.let { pendingPresetId = it }
             panelVisible = true
         }
@@ -187,8 +184,8 @@ fun EditorScreen(
         panelVisible = false
     }
     val onDiscardPanel: () -> Unit = {
-        if (selectedTool == EditorTool.PRESETS) {
-            // No Presets, o X volta à receita de antes do preset.
+        if (selectedTool == EditorTool.FILTER) {
+            // No Filtro, o X volta à receita de antes do preset.
             viewModel.clearPreset()
         } else {
             viewModel.discardPanelSession()
@@ -549,35 +546,22 @@ fun EditorScreen(
                         .padding(vertical = LumeSpacing.sm)
                 ) {
                     when (selectedTool) {
-                        EditorTool.LIGHT -> LightPanel(
+                        EditorTool.ADJUST -> AdjustPanel(
                             recipe = state.recipe,
                             histogram = state.histogram,
+                            isPro = state.isPro,
                             simpleMode = simpleMode,
                             onSimpleModeChange = { simpleMode = it },
-                            selectedSub = lightSub,
-                            onSubSelect = { lightSub = it },
-                            onDraft = { viewModel.updateRecipeDraft(it) },
-                            onCommit = { viewModel.commitRecipe() }
-                        )
-                        EditorTool.COLOR -> ColorPanel(
-                            recipe = state.recipe,
-                            isPro = state.isPro,
-                            selectedSub = colorSub,
-                            onSubSelect = { colorSub = it },
+                            selectedSub = adjustSub,
+                            onSubSelect = { adjustSub = it },
                             hslChannel = hslChannel,
                             onHslChannelSelect = { hslChannel = it },
                             hslAttr = hslAttr,
                             onHslAttrSelect = { hslAttr = it },
                             onDraft = { viewModel.updateRecipeDraft(it) },
                             onCommit = { viewModel.commitRecipe() },
-                            onRequestPaywall = { viewModel.requestPaywall() }
-                        )
-                        EditorTool.EFFECTS -> EffectsPanel(
-                            recipe = state.recipe,
-                            selectedSub = effectsSub,
-                            onSubSelect = { effectsSub = it },
-                            onDraft = { viewModel.updateRecipeDraft(it) },
-                            onCommit = { viewModel.commitRecipe() }
+                            onRequestPaywall = { viewModel.requestPaywall() },
+                            onCompareChange = { showOriginal = it }
                         )
                         EditorTool.CROP -> CropPanel(
                             geometry = state.geometry,
@@ -588,9 +572,10 @@ fun EditorScreen(
                             onGeometryChange = { viewModel.updateGeometry(it) },
                             onRatioSelect = { viewModel.setCropRatio(it) },
                             onRotate = { viewModel.rotateGeometry(it) },
-                            onFlip = { viewModel.flipGeometry(it) }
+                            onFlip = { viewModel.flipGeometry(it) },
+                            onCompareChange = { showOriginal = it }
                         )
-                        EditorTool.PRESETS -> PresetsPanel(
+                        EditorTool.FILTER -> FilterPanel(
                             presets = state.presets,
                             preview = state.preview,
                             appliedPresetName = state.appliedPresetName,
@@ -610,7 +595,8 @@ fun EditorScreen(
                                 if (pick != null) {
                                     viewModel.applyPreset(pick)
                                 }
-                            }
+                            },
+                            onCompareChange = { showOriginal = it }
                         )
                         EditorTool.HISTORY -> HistoryPanel(
                             recipe = state.recipe,

@@ -21,13 +21,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.lume.core.BuiltInPresets
 import app.lume.core.Geometry
 import app.lume.core.Recipe
-import app.lume.ui.editor.ColorPanel
+import app.lume.ui.editor.AdjustPanel
 import app.lume.ui.editor.CropPanel
 import app.lume.ui.editor.CropTab
-import app.lume.ui.editor.EffectsPanel
+import app.lume.ui.editor.FilterPanel
 import app.lume.ui.editor.HistoryPanel
-import app.lume.ui.editor.LightPanel
-import app.lume.ui.editor.PresetsPanel
 import app.lume.ui.theme.LumeTheme
 import org.junit.Assert
 import org.junit.Rule
@@ -50,26 +48,33 @@ class LumePanelsUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun painelLuz_simplesTrocaSubFerramenta() {
+    fun painelAjustar_simplesTrocaSubFerramenta() {
         var selectedSub by mutableStateOf("exposure")
         composeRule.setContent {
             LumeTheme {
-                LightPanel(
-                    recipe = Recipe(),
+                AdjustPanel(
+                    recipe = Recipe(exposure = 0.5f, contrast = 10f),
                     histogram = emptyList(),
+                    isPro = false,
                     simpleMode = true,
                     onSimpleModeChange = {},
                     selectedSub = selectedSub,
                     onSubSelect = { selectedSub = it },
+                    hslChannel = 0,
+                    onHslChannelSelect = {},
+                    hslAttr = "hue",
+                    onHslAttrSelect = {},
                     onDraft = {},
-                    onCommit = {}
+                    onCommit = {},
+                    onRequestPaywall = {},
+                    onCompareChange = {}
                 )
             }
         }
         composeRule.onNodeWithTag("sub_exposure").assertIsDisplayed()
         composeRule.onNodeWithTag("slim_slider").assertIsDisplayed()
-        // O rótulo aparece 2x: na tira de sub-ferramentas e no slider.
-        composeRule.onAllNodesWithText("Luz").assertCountEquals(2)
+        // A bolha mostra o valor do controle selecionado.
+        composeRule.onNodeWithText("+0.5").assertIsDisplayed()
         // A tira rola: o último item pode nascer fora da viewport e a
         // LazyRow só o compõe depois do scroll (falha da run #12).
         var tries = 0
@@ -82,33 +87,45 @@ class LumePanelsUiTest {
             tries++
         }
         composeRule.onNodeWithTag("sub_contrast").performClick()
-        composeRule.onAllNodesWithText("Clima").assertCountEquals(2)
-        uitestShot("10_luz_simples")
+        composeRule.onNodeWithText("+10").assertIsDisplayed()
+        uitestShot("10_ajustar_simples")
     }
 
     @Test
-    fun painelLuz_proMostraCurva() {
+    fun painelAjustar_proMostraCurva() {
         composeRule.setContent {
             LumeTheme {
-                LightPanel(
+                AdjustPanel(
                     recipe = Recipe(),
                     histogram = emptyList(),
+                    isPro = false,
                     simpleMode = false,
                     onSimpleModeChange = {},
                     selectedSub = "curve",
                     onSubSelect = {},
+                    hslChannel = 0,
+                    onHslChannelSelect = {},
+                    hslAttr = "hue",
+                    onHslAttrSelect = {},
                     onDraft = {},
-                    onCommit = {}
+                    onCommit = {},
+                    onRequestPaywall = {},
+                    onCompareChange = {}
                 )
             }
         }
         composeRule.onNodeWithText("Linear").assertIsDisplayed()
-        // "Contraste" aparece 2x: na tira (sub-ferramenta) e no chip
-        // da curva — por isso a contagem, não a unicidade.
-        composeRule.onAllNodesWithText("Contraste").assertCountEquals(2)
+        // "Contraste" é chip da curva e rótulo do trilho: a tira rola
+        // até a Curva sozinha, então a contagem depende do scroll —
+        // basta existir.
+        Assert.assertTrue(
+            "chip Contraste da curva não apareceu",
+            composeRule.onAllNodesWithText("Contraste")
+                .fetchSemanticsNodes().isNotEmpty()
+        )
         composeRule.onNodeWithText("Fade").assertIsDisplayed()
         composeRule.onNodeWithText("Suave").assertIsDisplayed()
-        uitestShot("11_luz_curva")
+        uitestShot("11_ajustar_curva")
     }
 
     @Test
@@ -117,15 +134,22 @@ class LumePanelsUiTest {
         var finished = 0
         composeRule.setContent {
             LumeTheme {
-                LightPanel(
+                AdjustPanel(
                     recipe = Recipe(),
                     histogram = emptyList(),
+                    isPro = false,
                     simpleMode = true,
                     onSimpleModeChange = {},
                     selectedSub = "exposure",
                     onSubSelect = {},
+                    hslChannel = 0,
+                    onHslChannelSelect = {},
+                    hslAttr = "hue",
+                    onHslAttrSelect = {},
                     onDraft = { recorded.add(it.exposure) },
-                    onCommit = { finished++ }
+                    onCommit = { finished++ },
+                    onRequestPaywall = {},
+                    onCompareChange = {}
                 )
             }
         }
@@ -143,14 +167,17 @@ class LumePanelsUiTest {
     }
 
     @Test
-    fun painelCor_hslMostraPontosAtributoECadeado() {
+    fun painelAjustar_hslMostraPontosAtributoECadeado() {
         var hslAttr by mutableStateOf("hue")
         var paywallRequested = false
         composeRule.setContent {
             LumeTheme {
-                ColorPanel(
+                AdjustPanel(
                     recipe = Recipe(),
+                    histogram = emptyList(),
                     isPro = false,
+                    simpleMode = false,
+                    onSimpleModeChange = {},
                     selectedSub = "hsl",
                     onSubSelect = {},
                     hslChannel = 0,
@@ -159,11 +186,12 @@ class LumePanelsUiTest {
                     onHslAttrSelect = { hslAttr = it },
                     onDraft = {},
                     onCommit = {},
-                    onRequestPaywall = { paywallRequested = true }
+                    onRequestPaywall = { paywallRequested = true },
+                    onCompareChange = {}
                 )
             }
         }
-        // Rótulo do slider = canal + atributo.
+        // Legenda do slider = canal + atributo.
         composeRule.onNodeWithText("Vermelho · Matiz").assertIsDisplayed()
         // Grátis libera os 4 primeiros canais; os outros 4 têm cadeado.
         composeRule.onAllNodesWithContentDescription("Canal Pro")
@@ -172,39 +200,59 @@ class LumePanelsUiTest {
         composeRule.onAllNodesWithContentDescription("Canal Pro")[0]
             .performClick()
         Assert.assertTrue(paywallRequested)
-        // O chip de atributo troca o slider. O chip vem antes da tira
-        // na árvore, então o primeiro "Saturação" é o chip.
+        // O chip de atributo troca o slider. O chip vem antes do
+        // trilho na árvore, então o primeiro "Saturação" é o chip
+        // (o rótulo do trilho nasce fora da viewport).
         composeRule.onAllNodesWithText("Saturação").onFirst().performClick()
         composeRule.onNodeWithText("Vermelho · Saturação").assertIsDisplayed()
-        uitestShot("13_cor_hsl")
+        uitestShot("13_ajustar_hsl")
     }
 
     @Test
-    fun painelEfeitos_trocaSubFerramenta() {
+    fun painelAjustar_efeitosTrocaSubFerramenta() {
         var selectedSub by mutableStateOf("clarity")
         composeRule.setContent {
             LumeTheme {
-                EffectsPanel(
-                    recipe = Recipe(),
+                AdjustPanel(
+                    recipe = Recipe(clarity = 10f, vignette = 20f),
+                    histogram = emptyList(),
+                    isPro = false,
+                    simpleMode = false,
+                    onSimpleModeChange = {},
                     selectedSub = selectedSub,
                     onSubSelect = { selectedSub = it },
+                    hslChannel = 0,
+                    onHslChannelSelect = {},
+                    hslAttr = "hue",
+                    onHslAttrSelect = {},
                     onDraft = {},
-                    onCommit = {}
+                    onCommit = {},
+                    onRequestPaywall = {},
+                    onCompareChange = {}
                 )
             }
         }
-        composeRule.onAllNodesWithText("Claridade").assertCountEquals(2)
+        composeRule.onNodeWithText("+10").assertIsDisplayed()
+        var tries = 0
+        while (composeRule.onAllNodesWithTag("sub_vignette")
+            .fetchSemanticsNodes().isEmpty() && tries < 4
+        ) {
+            composeRule.onNodeWithTag("sub_strip")
+                .performTouchInput { swipeLeft() }
+            composeRule.waitForIdle()
+            tries++
+        }
         composeRule.onNodeWithTag("sub_vignette").performClick()
-        composeRule.onAllNodesWithText("Vinheta").assertCountEquals(2)
-        uitestShot("14_efeitos")
+        composeRule.onNodeWithText("+20").assertIsDisplayed()
+        uitestShot("14_ajustar_efeitos")
     }
 
     @Test
-    fun painelPresets_mostraMiniaturasEIntensidade() {
+    fun painelFiltro_mostraMiniaturasEIntensidade() {
         var appliedName: String? by mutableStateOf(null)
         composeRule.setContent {
             LumeTheme {
-                PresetsPanel(
+                FilterPanel(
                     presets = BuiltInPresets.all,
                     preview = null,
                     appliedPresetName = appliedName,
@@ -215,7 +263,8 @@ class LumePanelsUiTest {
                     onIntensityFinished = {},
                     onSavePresetClick = {},
                     onSharePresetClick = {},
-                    onShuffleClick = {}
+                    onShuffleClick = {},
+                    onCompareChange = {}
                 )
             }
         }
@@ -226,7 +275,7 @@ class LumePanelsUiTest {
         // Aplicar um preset mostra o slider de intensidade.
         composeRule.onNodeWithText("Luz da Manhã").performClick()
         composeRule.onNodeWithText("Intensidade").assertIsDisplayed()
-        uitestShot("15_presets")
+        uitestShot("15_filtro")
     }
 
     @Test
@@ -249,10 +298,11 @@ class LumePanelsUiTest {
                 )
             }
         }
+        composeRule.onNodeWithText("Histórico").assertIsDisplayed()
         composeRule.onNodeWithText("Exposição").assertIsDisplayed()
         composeRule.onNodeWithText("Contraste").assertIsDisplayed()
         composeRule.onNodeWithText("Copiar edição").assertIsDisplayed()
-        composeRule.onNodeWithText("Redefinir tudo").assertIsDisplayed()
+        composeRule.onNodeWithText("Limpar tudo").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Remover Exposição")
             .performClick()
         Assert.assertEquals(1, cleared.size)
@@ -275,17 +325,19 @@ class LumePanelsUiTest {
                     onGeometryChange = {},
                     onRatioSelect = {},
                     onRotate = {},
-                    onFlip = {}
+                    onFlip = {},
+                    onCompareChange = {}
                 )
             }
         }
-        composeRule.onNodeWithText("CORTAR").assertIsDisplayed()
-        composeRule.onNodeWithText("CORRIGIR").assertIsDisplayed()
-        composeRule.onNodeWithText("GIRAR").assertIsDisplayed()
+        // "Cortar" aparece 2x: no título do painel e na aba.
+        composeRule.onAllNodesWithText("Cortar").assertCountEquals(2)
+        composeRule.onNodeWithText("Corrigir").assertIsDisplayed()
+        composeRule.onNodeWithText("Girar").assertIsDisplayed()
         composeRule.onNodeWithText("1:1").assertIsDisplayed()
-        composeRule.onNodeWithText("GIRAR").performClick()
+        composeRule.onNodeWithText("Girar").performClick()
         composeRule.onNodeWithText("Direita 90°").assertIsDisplayed()
-        composeRule.onNodeWithText("CORRIGIR").performClick()
+        composeRule.onNodeWithText("Corrigir").performClick()
         composeRule.onNodeWithText("Endireitar").assertIsDisplayed()
         uitestShot("17_cortar")
     }

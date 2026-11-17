@@ -1,23 +1,23 @@
 package app.lume.ui.editor
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Flip
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import app.lume.core.CropRatio
 import app.lume.core.Geometry
 import app.lume.core.formatDegrees
@@ -36,8 +38,9 @@ enum class CropTab {
 }
 
 /**
- * Cortar, com 3 abas: CORTAR (proporções + moldura na foto),
- * CORRIGIR (endireitar) e GIRAR (giro 90° + espelhos).
+ * Cortar (v4), com 3 abas de texto: Cortar (proporções + moldura
+ * na foto), Corrigir (endireitar) e Girar (giro 90° + espelhos).
+ * As 6 proporções ficam todas visíveis, com o desenho do formato.
  *
  * [photoWidth]/[photoHeight] são as dimensões da foto JÁ girada — o
  * espaço onde o corte vive. A perspectiva (inclinar) não está aqui:
@@ -54,6 +57,7 @@ internal fun CropPanel(
     onRatioSelect: (CropRatio) -> Unit,
     onRotate: (Int) -> Unit,
     onFlip: (Boolean) -> Unit,
+    onCompareChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -62,36 +66,40 @@ internal fun CropPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        TabRow(selectedTabIndex = cropTab.ordinal) {
-            Tab(
+        PanelHeader(title = "Cortar")
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.md)
+        ) {
+            TextTab(
+                label = "Cortar",
                 selected = cropTab == CropTab.CROP,
-                onClick = { onCropTabChange(CropTab.CROP) },
-                text = { Text("CORTAR") }
+                onClick = { onCropTabChange(CropTab.CROP) }
             )
-            Tab(
+            TextTab(
+                label = "Corrigir",
                 selected = cropTab == CropTab.STRAIGHTEN,
-                onClick = { onCropTabChange(CropTab.STRAIGHTEN) },
-                text = { Text("CORRIGIR") }
+                onClick = { onCropTabChange(CropTab.STRAIGHTEN) }
             )
-            Tab(
+            TextTab(
+                label = "Girar",
                 selected = cropTab == CropTab.ROTATE,
-                onClick = { onCropTabChange(CropTab.ROTATE) },
-                text = { Text("GIRAR") }
+                onClick = { onCropTabChange(CropTab.ROTATE) }
             )
         }
         when (cropTab) {
             CropTab.CROP -> {
-                LazyRow(
-                    contentPadding = PaddingValues(vertical = LumeSpacing.xs),
-                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    items(CropRatio.entries) { ratio ->
-                        FilterChip(
+                    CropRatio.entries.forEach { ratio ->
+                        RatioButton(
+                            ratio = ratio,
                             selected = ratio.matches(
                                 geometry.crop, photoWidth, photoHeight
                             ),
                             onClick = { onRatioSelect(ratio) },
-                            label = { Text(ratio.label) }
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
@@ -100,7 +108,7 @@ internal fun CropPanel(
             }
             CropTab.STRAIGHTEN -> {
                 SlimSliderRow(
-                    label = "Endireitar",
+                    caption = "Endireitar",
                     value = geometry.straightenDegrees,
                     valueRange = -Geometry.MAX_STRAIGHTEN..Geometry.MAX_STRAIGHTEN,
                     onValueChange = {
@@ -108,7 +116,8 @@ internal fun CropPanel(
                     },
                     onValueChangeFinished = {},
                     formatValue = ::formatDegrees,
-                    onReset = { onGeometryChange(geometry.copy(straightenDegrees = 0f)) }
+                    onReset = { onGeometryChange(geometry.copy(straightenDegrees = 0f)) },
+                    onCompareChange = onCompareChange
                 )
                 Text(
                     text = "Corta as bordas para não deixar cantos vazios.",
@@ -155,6 +164,61 @@ internal fun CropPanel(
                 }
             }
         }
+    }
+}
+
+/** Desenho do formato da proporção, na proporção real (limitada). */
+private fun ratioIconSize(aspect: Float?): Pair<Dp, Dp> {
+    if (aspect == null) return 24.dp to 18.dp
+    val height = 20.dp
+    val width = (20f * aspect).dp.coerceIn(13.dp, 28.dp)
+    return width to height
+}
+
+@Composable
+private fun RatioButton(
+    ratio: CropRatio,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val (iconWidth, iconHeight) = ratioIconSize(ratio.aspect)
+    val tint = if (selected) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .then(
+                if (selected) {
+                    Modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .width(iconWidth)
+                .height(iconHeight)
+                .border(
+                    1.5.dp,
+                    tint,
+                    RoundedCornerShape(2.dp)
+                )
+        )
+        Text(
+            text = ratio.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = tint,
+            textAlign = TextAlign.Center
+        )
     }
 }
 
