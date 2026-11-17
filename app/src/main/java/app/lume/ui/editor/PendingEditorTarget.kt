@@ -11,6 +11,10 @@ package app.lume.ui.editor
  *
  * O QR cai em [EditorTool.PRESETS] porque o QR do preset vive no
  * painel de presets do Editor — não existe tela de QR sozinha.
+ *
+ * O banner da Home pode pedir um preset ([Target.presetId]): o
+ * Editor aplica o preset à foto nova quando ela carrega. Foto com
+ * rascunho salvo não recebe o preset — o rascunho vence.
  */
 object PendingEditorTarget {
 
@@ -18,7 +22,8 @@ object PendingEditorTarget {
         val tool: EditorTool,
         val lightSub: String? = null,
         val colorSub: String? = null,
-        val effectsSub: String? = null
+        val effectsSub: String? = null,
+        val presetId: String? = null
     )
 
     var target: Target? = null

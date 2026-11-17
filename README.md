@@ -18,9 +18,11 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até os 30 presets (run 15, commit `d69ee4e`). Motor GPUImage
-(0.8.0) escrito localmente, aguardando envio.** Veredito visual
-da v3 no aparelho pendente. O Gradle não roda nesta VM (daemon
+verde até o motor GPUImage (run 17, commit `adbd1b2`, 0.8.0, APK
+entregue). Inicial v3 (0.9.0) escrita localmente, aguardando envio:**
+wordmark "Lume.", banner com wipe antes/depois + segurar para ver o
+original, heróis sobre o banner, "Continuar editando", tira escura
+com ícones azuis. Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste

@@ -110,8 +110,12 @@ fun EditorScreen(
     var effectsSub by remember { mutableStateOf("clarity") }
     var hslChannel by remember { mutableIntStateOf(0) }
     var hslAttr by remember { mutableStateOf("hue") }
+    var pendingPresetId by remember { mutableStateOf<String?>(null) }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
+        // Foto nova pelo seletor do Editor: o preset do banner não
+        // vale para ela (valia só para a foto que abriu o Editor).
+        pendingPresetId = null
         viewModel.openPhoto(uri)
     }
 
@@ -137,7 +141,21 @@ fun EditorScreen(
             target.lightSub?.let { lightSub = it }
             target.colorSub?.let { colorSub = it }
             target.effectsSub?.let { effectsSub = it }
+            target.presetId?.let { pendingPresetId = it }
             panelVisible = true
+        }
+    }
+
+    // Preset pedido pelo banner da Home: aplica quando a foto já
+    // carregou (o rascunho salvo, se houver, já foi restaurado).
+    // O rascunho vence: o preset só entra em foto sem edição.
+    LaunchedEffect(state.preview, state.presets, pendingPresetId) {
+        val presetId = pendingPresetId ?: return@LaunchedEffect
+        if (state.preview == null || state.presets.isEmpty()) return@LaunchedEffect
+        pendingPresetId = null
+        if (!state.recipe.isIdentity()) return@LaunchedEffect
+        state.presets.find { it.id == presetId }?.let { preset ->
+            viewModel.applyPreset(preset)
         }
     }
 

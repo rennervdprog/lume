@@ -4,13 +4,21 @@ import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -19,6 +27,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -26,8 +35,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,14 +47,12 @@ import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode2
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -75,24 +80,33 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -112,7 +126,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -166,30 +179,12 @@ private val HOME_FUNCTIONS = listOf(
     )
 )
 
-/** Um banner do carrossel: texto próprio + o preset que dá o clima. */
-private data class HomeBanner(
-    val title: String,
-    val desc: String,
-    val presetName: String
-)
+/** O preset que o banner da Home demonstra (antes/depois com wipe). */
+private const val BANNER_PRESET_ID = "builtin-pele-dourada"
 
-private val HOME_BANNERS = listOf(
-    HomeBanner(
-        "Presets que entendem a luz do Brasil",
-        "Testados em pele e luz tropical",
-        "Luz da Manhã"
-    ),
-    HomeBanner(
-        "Edite sem conta, sem anúncio, sem marca d'água",
-        "Grátis de verdade, para sempre",
-        "Vivo sem Exagero"
-    ),
-    HomeBanner(
-        "Lume Pro: HSL completo, curvas e lote",
-        "Para quem vive de foto",
-        "Tarde Dourada"
-    )
-)
+/** Heróis: altura do cartão e quanto dele entra no banner. */
+private val HERO_HEIGHT = 80.dp
+private val HERO_BANNER_OVERLAP = 26.dp
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -229,13 +224,19 @@ fun LibraryScreen(
     // decodificada uma vez. Nula sem rascunho ou se a foto sumiu.
     val sample = rememberSampleBitmap(state.drafts.firstOrNull()?.photoUri)
 
-    val bannerFilters = remember(state.presets) {
-        HOME_BANNERS.map { banner ->
-            state.presets.find { it.name == banner.presetName }?.recipe?.let { recipe ->
-                ColorFilter.colorMatrix(ColorMatrix(RecipeColorMatrix.values(recipe)))
-            }
+    // O preset que o banner demonstra: Pele Dourada, com quedas
+    // honestas se a lista mudar (nunca trava a Home).
+    val bannerPreset = remember(state.presets) {
+        state.presets.find { it.id == BANNER_PRESET_ID }
+            ?: state.presets.firstOrNull { it.collection == "Pele e Retrato" }
+            ?: state.presets.firstOrNull()
+    }
+    val bannerFilter = remember(bannerPreset) {
+        bannerPreset?.recipe?.let { recipe ->
+            ColorFilter.colorMatrix(ColorMatrix(RecipeColorMatrix.values(recipe)))
         }
     }
+    val heroMiniPresets = remember(state.presets) { state.presets.take(3) }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
         // O alvo só é entregue quando a foto chega: se o usuário
@@ -270,11 +271,6 @@ fun LibraryScreen(
     }
 
     val listState = rememberLazyListState()
-    val pagerState = rememberPagerState(pageCount = { HOME_BANNERS.size })
-    LaunchedEffect(pagerState.currentPage) {
-        delay(4000)
-        pagerState.animateScrollToPage((pagerState.currentPage + 1) % HOME_BANNERS.size)
-    }
 
     // Colapso guiado pelo scroll (igual ao MotionScene do Polish:
     // alpha 1 -> 0): o banner some com parallax, os heróis e a grade
@@ -317,7 +313,8 @@ fun LibraryScreen(
                     .fillMaxSize()
                     .testTag("library_list")
             ) {
-                // 0: banner.
+                // 0: banner (demonstração de preset com wipe) com os
+                // heróis montados na borda inferior dele.
                 item {
                     Box(
                         modifier = Modifier
@@ -329,86 +326,39 @@ fun LibraryScreen(
                             }
                             .testTag("home_banner")
                     ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize()
-                        ) { page ->
-                            HomeBannerPage(
-                                banner = HOME_BANNERS[page],
-                                sample = sample,
-                                filter = bannerFilters[page]
-                            )
-                        }
-                        Row(
-                            modifier = Modifier
-                                .align(Alignment.BottomStart)
-                                .padding(start = 24.dp, bottom = 34.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            HOME_BANNERS.indices.forEach { index ->
-                                val selected = pagerState.currentPage == index
-                                Box(
-                                    modifier = Modifier
-                                        .size(
-                                            width = if (selected) 14.dp else 5.dp,
-                                            height = 5.dp
-                                        )
-                                        .clip(RoundedCornerShape(3.dp))
-                                        .background(
-                                            if (selected) {
-                                                Color.White
-                                            } else {
-                                                Color.White.copy(alpha = 0.35f)
-                                            }
-                                        )
-                                        .clickable {
-                                            scope.launch {
-                                                pagerState.animateScrollToPage(index)
-                                            }
-                                        }
-                                )
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .height(36.dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.Transparent,
-                                            MaterialTheme.colorScheme.background
+                        HomeWipeBanner(
+                            preset = bannerPreset,
+                            sample = sample,
+                            filter = bannerFilter,
+                            onUsePreset = {
+                                bannerPreset?.let { preset ->
+                                    pickWith(
+                                        PendingEditorTarget.Target(
+                                            EditorTool.LIGHT,
+                                            presetId = preset.id
                                         )
                                     )
-                                )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
                         )
-                    }
-                }
-
-                // 1: heróis + grade de funções.
-                item {
-                    Column(
-                        modifier = Modifier.graphicsLayer {
-                            alpha = 1f - collapse
-                            translationY = -scrollOffsetPx * 0.12f
-                        }
-                    ) {
                         Row(
                             modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .offset(y = HERO_HEIGHT - HERO_BANNER_OVERLAP)
                                 .fillMaxWidth()
-                                .padding(start = 15.dp, end = 15.dp, top = 14.dp),
+                                .padding(horizontal = 15.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Card(
                                 onClick = { pickWith(null) },
                                 shape = RoundedCornerShape(18.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFFF3F3F3)
+                                    containerColor = MaterialTheme.colorScheme.primary
                                 ),
                                 modifier = Modifier
                                     .weight(232f)
-                                    .height(80.dp)
+                                    .height(HERO_HEIGHT)
                                     .testTag("hero_edit")
                             ) {
                                 Row(
@@ -419,9 +369,9 @@ fun LibraryScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Filled.Image,
+                                        imageVector = Icons.Filled.Add,
                                         contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
+                                        tint = MaterialTheme.colorScheme.onPrimary,
                                         modifier = Modifier.size(28.dp)
                                     )
                                     Text(
@@ -429,7 +379,7 @@ fun LibraryScreen(
                                         style = MaterialTheme.typography.titleMedium.copy(
                                             letterSpacing = 0.8.sp
                                         ),
-                                        color = Color(0xFF111111)
+                                        color = MaterialTheme.colorScheme.onPrimary
                                     )
                                 }
                             }
@@ -437,11 +387,11 @@ fun LibraryScreen(
                                 onClick = scrollToPresets,
                                 shape = RoundedCornerShape(18.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = Color(0xFFF3F3F3)
+                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
                                 ),
                                 modifier = Modifier
                                     .weight(90f)
-                                    .height(80.dp)
+                                    .height(HERO_HEIGHT)
                                     .testTag("hero_presets")
                             ) {
                                 Column(
@@ -449,43 +399,57 @@ fun LibraryScreen(
                                     verticalArrangement = Arrangement.Center,
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Tune,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(26.dp)
+                                    HeroMiniStrip(
+                                        presets = heroMiniPresets,
+                                        sample = sample
                                     )
                                     Text(
                                         text = "Presets",
                                         style = MaterialTheme.typography.titleSmall.copy(
                                             letterSpacing = 0.7.sp
                                         ),
-                                        color = Color(0xFF111111)
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
                                 }
                             }
                         }
+                    }
+                }
 
-                        Column(
-                            modifier = Modifier.padding(
+                // 1: grade de funções (os heróis vivem no item do
+                // banner; o topo limpa a parte que desce dele).
+                item {
+                    Column(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                alpha = 1f - collapse
+                                translationY = -scrollOffsetPx * 0.12f
+                            }
+                            .padding(
                                 start = 18.dp,
                                 end = 18.dp,
-                                top = 21.dp
+                                top = HERO_HEIGHT - HERO_BANNER_OVERLAP + 14.dp
                             )
-                        ) {
-                            HOME_FUNCTIONS.chunked(4).forEach { rowFunctions ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    rowFunctions.forEach { function ->
-                                        HomeFunctionItem(
-                                            function = function,
-                                            onPick = { pickWith(function.target) },
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .testTag("fn_${function.id}")
-                                        )
-                                    }
+                    ) {
+                        Text(
+                            text = "FERRAMENTAS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                letterSpacing = 2.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        HOME_FUNCTIONS.chunked(4).forEach { rowFunctions ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                rowFunctions.forEach { function ->
+                                    HomeFunctionItem(
+                                        function = function,
+                                        onPick = { pickWith(function.target) },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("fn_${function.id}")
+                                    )
                                 }
                             }
                         }
@@ -507,7 +471,7 @@ fun LibraryScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                SectionTitle("Rascunhos recentes")
+                                SectionTitle("Continuar editando")
                                 TextButton(
                                     onClick = {
                                         if (selectionMode) {
@@ -758,8 +722,9 @@ fun LibraryScreen(
                 }
             }
 
-            // Barra do topo sobre o banner: transparente no início,
-            // sólida quando a tira fixa aparece.
+            // Barra do topo: a marca "Lume." à esquerda, Pro + conta
+            // à direita. Transparente sobre o banner, sólida quando
+            // a tira fixa aparece.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -771,45 +736,96 @@ fun LibraryScreen(
                             Color.Transparent
                         }
                     )
-                    .padding(start = 11.dp, end = 13.dp),
+                    .padding(start = 16.dp, end = 13.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onOpenAccount) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "Conta",
-                        tint = if (topBarSolid) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.testTag("home_wordmark")
+                ) {
+                    Text(
+                        text = "Lume",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold
+                        ),
+                        color = if (topBarSolid) {
                             MaterialTheme.colorScheme.onSurface
                         } else {
                             Color.White
                         }
                     )
+                    Text(
+                        text = ".",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.ExtraBold
+                        ),
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
-                Surface(
-                    onClick = onOpenPaywall,
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .height(32.dp)
-                        .semantics { contentDescription = "Lume Pro" }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = LumeSpacing.sm),
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        onClick = onOpenPaywall,
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .height(32.dp)
+                            .semantics { contentDescription = "Lume Pro" }
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Star,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Text(
-                            text = "Pro",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = LumeSpacing.sm),
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = "Pro",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
+                    }
+                    Surface(
+                        onClick = onOpenAccount,
+                        shape = CircleShape,
+                        color = if (topBarSolid) {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        } else {
+                            Color.Black.copy(alpha = 0.35f)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (topBarSolid) {
+                                MaterialTheme.colorScheme.outlineVariant
+                            } else {
+                                Color.White.copy(alpha = 0.75f)
+                            }
+                        ),
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Person,
+                                contentDescription = "Conta",
+                                tint = if (topBarSolid) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    Color.White
+                                },
+                                modifier = Modifier.size(19.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -854,6 +870,7 @@ fun LibraryScreen(
                                     Icon(
                                         imageVector = function.icon,
                                         contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(24.dp)
                                     )
                                     Text(
@@ -900,23 +917,86 @@ private fun HomeFunctionItem(
     }
 }
 
-/** Uma página do carrossel: a foto do rascunho com o clima do preset. */
+/**
+ * O banner da Home: demonstração de um preset, não anúncio. A foto
+ * do primeiro rascunho com o preset varrendo em diagonal (depois à
+ * esquerda da linha, original à direita); segurar mostra o
+ * original — o mesmo gesto de comparar do Editor. Sem rascunho,
+ * gradiente da marca. O botão aplica o preset à foto escolhida.
+ */
 @Composable
-private fun HomeBannerPage(
-    banner: HomeBanner,
+private fun HomeWipeBanner(
+    preset: Preset?,
     sample: ImageBitmap?,
     filter: ColorFilter?,
+    onUsePreset: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(modifier = modifier.fillMaxSize()) {
+    var held by remember { mutableStateOf(false) }
+    val wipeTransition = rememberInfiniteTransition(label = "wipe")
+    val wipeFraction by wipeTransition.animateFloat(
+        initialValue = 0.06f,
+        targetValue = 0.94f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 3500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "wipeFraction"
+    )
+    BoxWithConstraints(modifier = modifier) {
+        val density = LocalDensity.current
+        val widthPx = remember(density, maxWidth) {
+            with(density) { maxWidth.toPx() }
+        }
+        val slantPx = remember(density) {
+            with(density) { 24.dp.toPx() }
+        }
         if (sample != null) {
-            Image(
-                bitmap = sample,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                colorFilter = filter,
-                modifier = Modifier.fillMaxSize()
-            )
+            // Original por baixo, foto com preset por cima recortada
+            // pela linha do wipe. Segurar esconde a camada do preset.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onPress = {
+                                held = true
+                                tryAwaitRelease()
+                                held = false
+                            }
+                        )
+                    }
+            ) {
+                Image(
+                    bitmap = sample,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Image(
+                    bitmap = sample,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    colorFilter = filter,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(WipeShape(wipeFraction, slantPx))
+                        .graphicsLayer { alpha = if (held) 0f else 1f }
+                )
+                // Linha do wipe, inclinada igual ao recorte.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .offset { IntOffset((widthPx * wipeFraction).toInt(), 0) }
+                        .width(3.dp)
+                        .height(260.dp)
+                        .graphicsLayer {
+                            rotationZ = -7f
+                            alpha = if (held) 0f else 1f
+                        }
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
         } else {
             // Sem rascunho: gradiente da marca, sem foto inventada.
             Box(
@@ -940,39 +1020,123 @@ private fun HomeBannerPage(
                 )
             }
         }
+        // Sombra para a legenda continuar legível sobre a foto.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color.Black.copy(alpha = 0.35f),
+                            Color.Black.copy(alpha = 0.25f),
                             Color.Transparent,
                             Color.Black.copy(alpha = 0.55f)
                         )
                     )
                 )
         )
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 24.dp, bottom = 50.dp, end = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(LumeSpacing.xxs)
-        ) {
-            Text(
-                text = banner.title,
-                style = MaterialTheme.typography.titleLarge,
+        if (preset != null) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 24.dp, bottom = 44.dp, end = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(LumeSpacing.xxs)
+            ) {
+                Text(
+                    text = preset.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "Coleção ${preset.collection}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Surface(
+                onClick = onUsePreset,
+                shape = RoundedCornerShape(20.dp),
                 color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 44.dp)
+            ) {
+                Text(
+                    text = "Usar este preset",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color(0xFF111111),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+/** Recorte diagonal do wipe: mostra a camada do preset à esquerda. */
+private class WipeShape(
+    private val fraction: Float,
+    private val slantPx: Float
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val x = size.width * fraction
+        val path = Path().apply {
+            moveTo(0f, 0f)
+            lineTo(x, 0f)
+            lineTo(x - slantPx, size.height)
+            lineTo(0f, size.height)
+            close()
+        }
+        return Outline.Generic(path)
+    }
+}
+
+/** 3 miniaturas reais no herói Presets (nada, sem presets). */
+@Composable
+private fun HeroMiniStrip(
+    presets: List<Preset>,
+    sample: ImageBitmap?,
+    modifier: Modifier = Modifier
+) {
+    if (presets.isEmpty()) return
+    // Miniaturas rápidas pela matriz (aproximação v1): o visual
+    // completo do preset só aparece no Editor e na exportação.
+    val filters = remember(presets) {
+        presets.map { preset ->
+            ColorFilter.colorMatrix(
+                ColorMatrix(RecipeColorMatrix.values(preset.recipe))
             )
-            Text(
-                text = banner.desc,
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.85f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+        }
+    }
+    Row(
+        modifier = modifier.padding(bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        presets.forEachIndexed { index, preset ->
+            if (sample != null) {
+                Image(
+                    bitmap = sample,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    colorFilter = filters[index],
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                )
+            } else {
+                PresetSwatch(
+                    preset = preset,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(7.dp))
+                )
+            }
         }
     }
 }
@@ -1342,7 +1506,26 @@ private fun DraftThumbnail(photoUri: String, modifier: Modifier = Modifier) {
 private fun formatDraftDate(millis: Long): String {
     // Nunca java.time (minSdk 24). SimpleDateFormat + catch (Throwable).
     return try {
-        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date(millis))
+        val diff = System.currentTimeMillis() - millis
+        val minute = 60_000L
+        val hour = 60 * minute
+        val day = 24 * hour
+        when {
+            diff < minute -> "agora mesmo"
+            diff < hour -> {
+                val value = diff / minute
+                if (value == 1L) "há 1 min" else "há $value min"
+            }
+            diff < day -> {
+                val value = diff / hour
+                if (value == 1L) "há 1 h" else "há $value h"
+            }
+            diff < 7 * day -> {
+                val value = diff / day
+                if (value == 1L) "há 1 dia" else "há $value dias"
+            }
+            else -> SimpleDateFormat("dd/MM/yyyy", Locale("pt", "BR")).format(Date(millis))
+        }
     } catch (t: Throwable) {
         "Rascunho"
     }
