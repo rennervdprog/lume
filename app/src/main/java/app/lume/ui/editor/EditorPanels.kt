@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Style
 import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.FilterChip
@@ -57,6 +60,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -957,41 +961,25 @@ internal fun PresetsPanel(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = LumeSpacing.md),
-            verticalAlignment = Alignment.CenterVertically
+        // Categorias: texto puro com traço azul na selecionada, sem
+        // pílulas — a fileira nunca muda de altura nem pula.
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = LumeSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.md)
         ) {
-            LazyRow(
-                modifier = Modifier.weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-            ) {
-                item {
-                    FilterChip(
-                        selected = selectedCollection == null,
-                        onClick = { selectedCollection = null },
-                        label = { Text("Todos") }
-                    )
-                }
-                items(collections) { collection ->
-                    FilterChip(
-                        selected = selectedCollection == collection,
-                        onClick = { selectedCollection = collection },
-                        label = { Text(collection) }
-                    )
-                }
+            item {
+                CategoryTab(
+                    label = "Todos",
+                    selected = selectedCollection == null,
+                    onClick = { selectedCollection = null }
+                )
             }
-            TextButton(onClick = onShuffleClick) {
-                Text("Embaralhar")
-            }
-            if (appliedPreset != null) {
-                TextButton(onClick = { onSharePresetClick(appliedPreset) }) {
-                    Text("QR")
-                }
-            }
-            TextButton(onClick = onSavePresetClick) {
-                Text("Salvar")
+            items(collections) { collection ->
+                CategoryTab(
+                    label = collection,
+                    selected = selectedCollection == collection,
+                    onClick = { selectedCollection = collection }
+                )
             }
         }
         LazyRow(
@@ -1047,6 +1035,67 @@ internal fun PresetsPanel(
                 }
             }
         }
+        // Ações na própria linha, sempre no mesmo lugar: o QR fica
+        // desativado (não some) sem preset aplicado.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = LumeSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+        ) {
+            OutlinedButton(
+                onClick = onShuffleClick,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Shuffle,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Embaralhar",
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+            OutlinedButton(
+                onClick = { appliedPreset?.let(onSharePresetClick) },
+                enabled = appliedPreset != null,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.QrCode2,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "QR",
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+            OutlinedButton(
+                onClick = onSavePresetClick,
+                contentPadding = PaddingValues(horizontal = 12.dp),
+                modifier = Modifier.height(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Save,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Salvar",
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    modifier = Modifier.padding(start = 6.dp)
+                )
+            }
+        }
         if (appliedPreset != null) {
             SlimSliderRow(
                 label = "Intensidade",
@@ -1058,6 +1107,54 @@ internal fun PresetsPanel(
                 modifier = Modifier.padding(horizontal = LumeSpacing.md)
             )
         }
+    }
+}
+
+/**
+ * Uma aba de categoria: texto puro, sem pílula. A selecionada leva
+ * o traço azul de 2dp; a não selecionada reserva o mesmo espaço
+ * com o traço transparente, para a fileira nunca pular.
+ */
+@Composable
+private fun CategoryTab(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 2.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            ),
+            color = if (selected) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1
+        )
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .fillMaxWidth()
+                .height(2.dp)
+                .clip(RoundedCornerShape(1.dp))
+                .background(
+                    if (selected) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        Color.Transparent
+                    }
+                )
+        )
     }
 }
 

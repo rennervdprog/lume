@@ -22,7 +22,10 @@ verde até o motor GPUImage (run 17, commit `adbd1b2`, 0.8.0, APK
 entregue). Inicial v3 (0.9.0) escrita localmente, aguardando envio:**
 wordmark "Lume.", banner com wipe antes/depois + segurar para ver o
 original, heróis sobre o banner, "Continuar editando", tira escura
-com ícones azuis. Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
+com ícones azuis. Veredito do HSL no aparelho pendente. Correção
+das categorias do Presets (0.9.1) escrita localmente, aguardando
+envio logo atrás do 0.9.0: categorias em texto com traço azul,
+Embaralhar/QR/Salvar em linha própria, QR desativado sem preset. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste
