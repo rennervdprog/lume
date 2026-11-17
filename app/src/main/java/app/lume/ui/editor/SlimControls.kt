@@ -397,6 +397,11 @@ internal fun PanelHeader(
  * traço azul de 2dp; a não selecionada reserva o mesmo espaço com
  * o traço transparente, para a fileira nunca pular. Usada nas
  * categorias de filtros e nas abas do Cortar.
+ *
+ * O traço vive DENTRO de um Box do tamanho do texto: com o traço
+ * como filho de Column com fillMaxWidth, a primeira aba roubava
+ * toda a largura da fileira e empurrava as outras para fora da
+ * tela (run #22: "Corrigir" fora da viewport).
  */
 @Composable
 internal fun TextTab(
@@ -405,12 +410,12 @@ internal fun TextTab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(
+    Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+        contentAlignment = Alignment.TopCenter
     ) {
         Text(
             text = label,
@@ -422,11 +427,12 @@ internal fun TextTab(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
-            maxLines = 1
+            maxLines = 1,
+            modifier = Modifier.padding(bottom = 6.dp)
         )
         Box(
             modifier = Modifier
-                .padding(top = 4.dp)
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .height(2.dp)
                 .clip(RoundedCornerShape(1.dp))
