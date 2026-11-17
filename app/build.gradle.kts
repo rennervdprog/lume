@@ -16,8 +16,8 @@ android {
         applicationId = "app.lume"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.zxing.core)
+    implementation(libs.gpuimage)
     testImplementation(libs.junit)
     // O BOM declarado só em `implementation` não alcança o classpath
     // do androidTest: sem esta linha o Gradle não resolve a versão do

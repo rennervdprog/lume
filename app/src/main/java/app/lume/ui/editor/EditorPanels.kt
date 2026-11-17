@@ -675,10 +675,11 @@ internal fun EffectsPanel(
     onCommit: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    // Sem "Grão": a GPUImage não tem filtro de grão e o campo fica só
+    // nos dados (ver GpuImagePipeline). Sem slider falso.
     val options = listOf(
         "clarity" to "Claridade",
         "vignette" to "Vinheta",
-        "grain" to "Grão",
         "fade" to "Desbotado"
     )
     val effectiveSub = if (options.any { it.first == selectedSub }) {
@@ -702,23 +703,16 @@ internal fun EffectsPanel(
                 formatValue = ::formatSigned,
                 onReset = { onDraft(recipe.copy(clarity = 0f)); onCommit() }
             )
+            // Vinheta 0..100: o filtro da GPUImage só escurece os
+            // cantos — negativo seria um slider que não faz nada.
             "vignette" -> SlimSliderRow(
                 label = "Vinheta",
-                value = recipe.vignette,
-                valueRange = -100f..100f,
+                value = recipe.vignette.coerceAtLeast(0f),
+                valueRange = 0f..100f,
                 onValueChange = { onDraft(recipe.copy(vignette = it)) },
                 onValueChangeFinished = onCommit,
                 formatValue = ::formatSigned,
                 onReset = { onDraft(recipe.copy(vignette = 0f)); onCommit() }
-            )
-            "grain" -> SlimSliderRow(
-                label = "Grão",
-                value = recipe.grain,
-                valueRange = -100f..100f,
-                onValueChange = { onDraft(recipe.copy(grain = it)) },
-                onValueChangeFinished = onCommit,
-                formatValue = ::formatSigned,
-                onReset = { onDraft(recipe.copy(grain = 0f)); onCommit() }
             )
             "fade" -> SlimSliderRow(
                 label = "Desbotado",

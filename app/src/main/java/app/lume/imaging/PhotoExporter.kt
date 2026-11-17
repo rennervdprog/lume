@@ -24,12 +24,12 @@ import kotlinx.coroutines.withContext
  * Exportação em resolução total, sem marca d'água e sem limite — para
  * todo mundo, sem Pro (regra dura do estudo §4.4).
  *
- * Renderiza com o MESMO motor do preview ([GlEngine], shader): o que o
- * usuário vê é o que sai no arquivo. Se o motor falhar (foto acima do
- * limite de textura da GPU, EGL indisponível), cai para a matriz
- * ([render], CPU) — a exportação continua funcionando, sem os ajustes
- * de HSL/curva/efeitos da receita v2. A renderização acontece fora da
- * thread de UI.
+ * Renderiza com o MESMO motor do preview ([GlEngine], cadeia de
+ * filtros da GPUImage): o que o usuário vê é o que sai no arquivo.
+ * Se o motor falhar (foto acima do limite de textura da GPU, EGL
+ * indisponível), cai para a matriz ([render], CPU) — a exportação
+ * continua funcionando, sem os ajustes de HSL/curva/efeitos da
+ * receita v2. A renderização acontece fora da thread de UI.
  *
  * TODO (Fase 1+): preservar EXIF (com opção de remover localização),
  * HEIC/PNG/TIFF (Pro), tiles para texturas acima do limite da GPU, e

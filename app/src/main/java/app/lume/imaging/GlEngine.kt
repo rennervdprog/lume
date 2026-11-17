@@ -13,11 +13,19 @@ import kotlinx.coroutines.withContext
 /**
  * Ponto único de acesso ao motor GL — e a fronteira do fallback.
  *
+ * O motor é a GPUImage (biblioteca gratuita, Apache 2.0): uma cadeia
+ * de filtros dela desenhada offscreen por [GpuImagePipeline]. O shader
+ * próprio da Fase 1 foi aposentado em 17/11/2026 — o HSL dele não
+ * funcionava no aparelho (uniforms em array voltavam -1 em algumas
+ * GPUs, em silêncio). O único filtro próprio que restou é o mixer
+ * HSL ([HslMixerFilter]), sem arrays de uniforms.
+ *
  * - Todo trabalho GL roda numa thread dedicada ([glDispatcher]): o
- *   contexto EGL é criado e usado sempre na mesma thread, como exige o
- *   EGL. Preview e exportação compartilham a thread (renders são
- *   sequenciais e curtos); cada um usa a mesma instância de
- *   [GlPhotoRenderer], que guarda a textura da foto atual.
+ *   contexto EGL é criado e usado sempre na mesma thread, como exige
+ *   o EGL e o PixelBuffer. Preview e exportação compartilham a
+ *   thread (renders são sequenciais e curtos); cada um usa a mesma
+ *   instância de [GpuImagePipeline], que guarda a textura da foto
+ *   atual.
  * - [render] NUNCA estoura: qualquer falha (sem EGL, shader, textura
  *   acima do limite da GPU) retorna null e o chamador cai para o
  *   caminho da matriz ([PhotoExporter.render], CPU). O app nunca quebra
@@ -37,19 +45,18 @@ object GlEngine {
     }.asCoroutineDispatcher()
     private val scope = CoroutineScope(SupervisorJob() + glDispatcher)
 
-    private var renderer: GlPhotoRenderer? = null
+    private var pipeline: GpuImagePipeline? = null
     private var currentSource: Bitmap? = null
 
     /**
-     * Renderiza [recipe] sobre [source] via shader. Retorna o bitmap
+     * Renderiza [recipe] sobre [source] via GPUImage. Retorna o bitmap
      * editado, ou null se o motor falhar (chamador usa o fallback).
      */
     suspend fun render(source: Bitmap, recipe: Recipe): Bitmap? =
         withContext(glDispatcher) {
             try {
-                val active = renderer ?: GlPhotoRenderer().also {
-                    it.init()
-                    renderer = it
+                val active = pipeline ?: GpuImagePipeline().also {
+                    pipeline = it
                 }
                 if (currentSource !== source) {
                     active.setSource(source)
@@ -61,15 +68,15 @@ object GlEngine {
                 // engolir — senão o render velho atualiza a tela.
                 throw e
             } catch (e: Exception) {
-                // Motor fora: descarta o renderizador (pode estar
+                // Motor fora: descarta o pipeline (pode estar
                 // parcialmente inicializado) e deixa o fallback agir.
                 // A próxima chamada tenta inicializar de novo.
                 try {
-                    renderer?.release()
+                    pipeline?.release()
                 } catch (ignored: Exception) {
                     // Liberar nunca pode estourar para o chamador.
                 }
-                renderer = null
+                pipeline = null
                 currentSource = null
                 null
             }
@@ -79,11 +86,11 @@ object GlEngine {
     fun release() {
         scope.launch {
             try {
-                renderer?.release()
+                pipeline?.release()
             } catch (ignored: Exception) {
                 // Melhor esforço.
             }
-            renderer = null
+            pipeline = null
             currentSource = null
         }
     }

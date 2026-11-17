@@ -18,8 +18,8 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até a home nova (run 14, commit `2d0bcea`). 30 presets novos
-(0.7.0) escritos localmente, aguardando envio.** Veredito visual
+verde até os 30 presets (run 15, commit `d69ee4e`). Motor GPUImage
+(0.8.0) escrito localmente, aguardando envio.** Veredito visual
 da v3 no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
@@ -35,9 +35,12 @@ verificado (estático + CI + teste no aparelho).
 - **Receita paramétrica versionada** (`Recipe` v2, JSON via
   kotlinx-serialization): uma fonte de verdade para preview, exportação,
   presets, histórico e rascunhos. JSON v1 decodifica com defaults v2.
-- **Motor GLSL próprio** (um passe só, EGL offscreen): faixas tonais
-  seletivas, HSL 8 canais, curva tonal (LUT 256), efeitos — com
-  fallback para a matriz na CPU se o GL falhar.
+- **Motor GPUImage** (cadeia de filtros, EGL offscreen persistente):
+  exposição, balanço de branco, contraste, saturação, vibração, HSL
+  8 canais (único filtro próprio), curva composta (master + faixas
+  tonais + desbotado), claridade e vinheta — com fallback para a
+  matriz na CPU se o GL falhar. O shader próprio da Fase 1 foi
+  aposentado em 17/11/2026: o HSL dele não funcionava no aparelho.
 - **Geometria** (`Geometry`, separada da receita): giro 90°, espelhos,
   endireitar ±10° (corta o retângulo inscrito, sem cantos vazios) e
   corte com moldura arrastável + proporções prontas. Aplica-se DEPOIS
@@ -89,31 +92,41 @@ verificado (estático + CI + teste no aparelho).
 
 ## Decisão de renderização (e suas limitações honestas)
 
-**Abordagem da Fase 1: shader GLSL próprio, um passe só**
-(`imaging/GlPhotoRenderer.kt`, via `imaging/GlEngine.kt`).
+**Abordagem atual (0.8.0): cadeia de filtros da GPUImage**
+(`imaging/GpuImagePipeline.kt`, via `imaging/GlEngine.kt`). A GPUImage
+é gratuita (Apache 2.0) e a mesma base que o Polish usa.
 
-- O preview e a exportação renderizam a **mesma** receita no **mesmo**
-  shader (EGL pbuffer offscreen, OpenGL ES 2.0): claridade → exposição →
-  balanço de branco → faixas tonais seletivas → contraste → vibração/
-  saturação → HSL 8 canais → curvas (LUT 256, master + RGB) → desbotado
-  → vinheta → grão. O que se vê é o que sai no arquivo.
-- A matriz de cor 4x5 (`core/RecipeColorMatrix.kt`) virou a **rota de
+- O preview e a exportação renderizam a **mesma** receita na **mesma**
+  cadeia (EGL pbuffer offscreen persistente, OpenGL ES 2.0):
+  exposição → balanço de branco → contraste → saturação → vibração →
+  HSL 8 canais → curva composta → claridade → vinheta. O que se vê é
+  o que sai no arquivo. A curva composta dobra master + realces/
+  sombras/brancos/pretos + desbotado numa LUT só (ver
+  `imaging/ComposedCurve.kt`, com teste unitário).
+- O pbuffer é persistente (não a API de um tiro da biblioteca, que
+  recompila os shaders a cada chamada): os programas compilam uma vez
+  e cada gesto só atualiza parâmetros.
+- O shader GLSL próprio da Fase 1 foi aposentado em 17/11/2026: o HSL
+  dele usava arrays de uniforms (`uniform float uHslHue[8]`) cuja
+  consulta volta -1 em algumas GPUs — no aparelho do Renner o HSL não
+  fazia nada, em silêncio. O único filtro próprio que restou é o mixer
+  HSL (`imaging/HslMixerFilter.kt`), com parâmetros em vec4
+  escalares, sem arrays.
+- A matriz de cor 4x5 (`core/RecipeColorMatrix.kt`) é a **rota de
   fallback**: se o GL falhar (sem EGL, foto acima do limite de textura
   da GPU), preview e exportação caem para a matriz na CPU — a edição
   continua funcionando, sem os ajustes v2 (HSL/curva/efeitos). A tira
   de presets e as amostras da Biblioteca usam a matriz direto
   (aproximação rápida dos looks).
-- Por que shader próprio e não GPUImage: sem dependência nova, sem
-  pipeline baseado em View (`AndroidView`), e o controle total da ordem
-  dos estágios — que é o contrato de portabilidade dos presets.
 
 **Limitações honestas, documentadas no código:**
 
-- A claridade usa a média 3x3 da fonte (borrar os vizinhos já
-  processados exigiria 9 avaliações do pipeline por pixel).
+- Sem grão: a GPUImage não tem filtro de grão. O campo `grain` fica
+  preservado na receita e nos presets, sem slider na UI, até um filtro
+  próprio futuro.
+- A claridade é o filtro de nitidez da biblioteca (aproximação).
+- A vinheta só escurece (0..100); o filtro não clareia cantos.
 - Fotos acima de `GL_MAX_TEXTURE_SIZE` caem para a matriz (sem tiles).
-- Temperatura/matiz seguem ganhos por canal (aproximação de balanço de
-  branco, igual à matriz — os looks da Fase 0 carregam iguais).
 
 ## O que é TODO (e por quê)
 
@@ -151,7 +164,9 @@ app.lume
 │   ├── auth/                 AuthRepository + visitante local
 │   └── pro/                  EntitlementRepository + flag de debug
 ├── imaging/
-│   ├── GlPhotoRenderer.kt    EGL + shader (motor, um passe só)
+│   ├── GpuImagePipeline.kt   Cadeia de filtros GPUImage (motor, pbuffer persistente)
+│   ├── HslMixerFilter.kt     Único filtro próprio: HSL 8 canais (vec4, sem arrays)
+│   ├── ComposedCurve.kt      Curva composta: master + faixas + desbotado (puro Kotlin)
 │   ├── GlEngine.kt           Thread GL + fallback seguro
 │   ├── GeometryTransform.kt  Geometria sobre o bitmap (matriz + corte)
 │   ├── BitmapLoader.kt       Decodificação com EXIF
