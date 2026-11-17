@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -395,13 +396,14 @@ internal fun PanelHeader(
 /**
  * Uma aba de texto: texto puro, sem pílula. A selecionada leva o
  * traço azul de 2dp; a não selecionada reserva o mesmo espaço com
- * o traço transparente, para a fileira nunca pular. Usada nas
+ * o traço ausente, para a fileira nunca pular. Usada nas
  * categorias de filtros e nas abas do Cortar.
  *
- * O traço vive DENTRO de um Box do tamanho do texto: com o traço
- * como filho de Column com fillMaxWidth, a primeira aba roubava
- * toda a largura da fileira e empurrava as outras para fora da
- * tela (run #22: "Corrigir" fora da viewport).
+ * O traço é DESENHADO (drawBehind), nunca um filho com
+ * fillMaxWidth: um filho assim, medido contra as restrições do
+ * pai, alarga a aba até a largura da fileira e empurra as outras
+ * abas para fora da tela — foi o que quebrou o teste do Cortar
+ * nas runs #22 e #23, nas duas formas (Column e Box).
  */
 @Composable
 internal fun TextTab(
@@ -410,12 +412,13 @@ internal fun TextTab(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    val primary = MaterialTheme.colorScheme.primary
+    Column(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 2.dp, vertical = 6.dp),
-        contentAlignment = Alignment.TopCenter
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
             text = label,
@@ -428,21 +431,18 @@ internal fun TextTab(
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
             maxLines = 1,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Box(
             modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(2.dp)
-                .clip(RoundedCornerShape(1.dp))
-                .background(
+                .drawBehind {
                     if (selected) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        Color.Transparent
+                        val line = 2.dp.toPx()
+                        drawRect(
+                            color = primary,
+                            topLeft = Offset(0f, size.height - line),
+                            size = Size(size.width, line)
+                        )
                     }
-                )
+                }
+                .padding(bottom = 6.dp)
         )
     }
 }
