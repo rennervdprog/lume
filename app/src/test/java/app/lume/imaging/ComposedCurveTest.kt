@@ -67,7 +67,9 @@ class ComposedCurveTest {
     @Test
     fun realcesESombrasAgemNasFaixasCertas() {
         val highlights = ComposedCurve.points(Recipe(highlights = -100f))
-        assertEquals(0.4375f, yAt(highlights, 0.875f), 0.02f)
+        // Peso do smoothstep(0.55, 0.95) em x=0.875 ≈ 0.907, não 0.5:
+        // y = 0.875 × (1 - 0.907) ≈ 0.0817 (reproduzido no Python e no CI).
+        assertEquals(0.0817f, yAt(highlights, 0.875f), 0.02f)
         assertEquals(0.125f, yAt(highlights, 0.125f), 0.01f)
 
         val shadows = ComposedCurve.points(Recipe(shadows = 100f))
