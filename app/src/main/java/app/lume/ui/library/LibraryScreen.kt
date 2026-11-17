@@ -1,9 +1,11 @@
 package app.lume.ui.library
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -110,6 +112,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lume.R
 import app.lume.core.Preset
 import app.lume.core.RecipeColorMatrix
 import app.lume.data.Draft
@@ -221,8 +224,13 @@ fun LibraryScreen(
     }
 
     // A foto de amostra de tudo na Home: o primeiro rascunho,
-    // decodificada uma vez. Nula sem rascunho ou se a foto sumiu.
-    val sample = rememberSampleBitmap(state.drafts.firstOrNull()?.photoUri)
+    // decodificado uma vez. Sem rascunho, as fotos genéricas do
+    // app (retrato para Pele e Retrato, paisagem para o resto) —
+    // a Home nunca fica com cartões vazios.
+    val draftSample = rememberSampleBitmap(state.drafts.firstOrNull()?.photoUri)
+    val fallbackPortrait = rememberDrawableSample(R.drawable.sample_portrait)
+    val fallbackLandscape = rememberDrawableSample(R.drawable.sample_landscape)
+    val sample = draftSample ?: fallbackPortrait
 
     // O preset que o banner demonstra: Pele Dourada, com quedas
     // honestas se a lista mudar (nunca trava a Home).
@@ -579,7 +587,12 @@ fun LibraryScreen(
                                     collection = collection,
                                     count = count,
                                     firstPreset = firstPreset,
-                                    sample = sample,
+                                    sample = sampleForCollection(
+                                        collection,
+                                        draftSample,
+                                        fallbackPortrait,
+                                        fallbackLandscape
+                                    ),
                                     onClick = {
                                         selectedCollection = collection
                                         scrollToPresets()
@@ -652,7 +665,12 @@ fun LibraryScreen(
                             visiblePresets.forEach { preset ->
                                 PresetGridCard(
                                     preset = preset,
-                                    sample = sample,
+                                    sample = sampleForCollection(
+                                        preset.collection,
+                                        draftSample,
+                                        fallbackPortrait,
+                                        fallbackLandscape
+                                    ),
                                     onClick = {
                                         scope.launch {
                                             snackbarHostState.showSnackbar(
@@ -1456,6 +1474,42 @@ private fun rememberSampleBitmap(photoUri: String?): ImageBitmap? {
     }
 
     return bitmap?.asImageBitmap()
+}
+
+/**
+ * Uma foto genérica do app, decodificada uma vez. Fica em
+ * drawable-nodpi para o sistema não reescalar por densidade.
+ */
+@Composable
+private fun rememberDrawableSample(@DrawableRes resId: Int): ImageBitmap? {
+    val context = LocalContext.current
+    var bitmap by remember(resId) { mutableStateOf<Bitmap?>(null) }
+
+    LaunchedEffect(resId) {
+        val loaded = withContext(Dispatchers.IO) {
+            try {
+                BitmapFactory.decodeResource(context.resources, resId)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        bitmap = loaded
+    }
+
+    return bitmap?.asImageBitmap()
+}
+
+/**
+ * A amostra de um cartão: a foto do rascunho vence; sem rascunho,
+ * o retrato para a coleção de retrato e a paisagem para as outras.
+ */
+private fun sampleForCollection(
+    collection: String,
+    draft: ImageBitmap?,
+    portrait: ImageBitmap?,
+    landscape: ImageBitmap?
+): ImageBitmap? {
+    return draft ?: if (collection == "Pele e Retrato") portrait else landscape
 }
 
 @Composable

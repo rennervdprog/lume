@@ -25,7 +25,10 @@ original, heróis sobre o banner, "Continuar editando", tira escura
 com ícones azuis. Veredito do HSL no aparelho pendente. Correção
 das categorias do Presets (0.9.1) escrita localmente, aguardando
 envio logo atrás do 0.9.0: categorias em texto com traço azul,
-Embaralhar/QR/Salvar em linha própria, QR desativado sem preset. O Gradle não roda nesta VM (daemon
+Embaralhar/QR/Salvar em linha própria, QR desativado sem preset.
+Fotos genéricas nos presets (0.9.2) escritas localmente,
+aguardando envio: retrato + paisagem em drawable-nodpi como
+amostra quando não há rascunho (a foto do usuário vence). O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste
