@@ -887,7 +887,6 @@ internal fun HistoryPanel(
     }
 }
 
-@Composable
 /** Abas do painel Filtro: presets (Todos + coleções) e LUTs. */
 internal sealed interface FilterTab {
     data object All : FilterTab
@@ -896,6 +895,7 @@ internal sealed interface FilterTab {
     data class Collection(val name: String) : FilterTab
 }
 
+@Composable
 internal fun FilterPanel(
     presets: List<Preset>,
     preview: ImageBitmap?,
