@@ -4,12 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.CopiedEditStore
 import app.lume.core.CropRatio
+import app.lume.core.CubeParseResult
+import app.lume.core.CubeParser
 import app.lume.core.EditHistory
 import app.lume.core.Geometry
 import app.lume.core.Preset
@@ -18,12 +21,17 @@ import app.lume.core.Recipe
 import app.lume.data.DraftRepository
 import app.lume.data.DraftThumbnails
 import app.lume.data.PresetRepository
+import app.lume.data.UserLut
+import app.lume.data.UserLutStore
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
 import app.lume.imaging.GeometryTransform
 import app.lume.imaging.GlEngine
 import app.lume.imaging.Histogram
+import app.lume.imaging.LutGrid
+import app.lume.imaging.LutGrids
 import app.lume.imaging.PhotoExporter
+import java.security.MessageDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,7 +60,9 @@ data class EditorUiState(
     val appliedPresetName: String? = null,
     val presetIntensity: Float = 1f,
     val histogram: List<Float> = emptyList(),
-    val isPro: Boolean = false
+    val isPro: Boolean = false,
+    /** LUTs .cube importados pelo usuário (aba Meus LUTs). */
+    val userLuts: List<UserLut> = emptyList()
 )
 
 class EditorViewModel(
@@ -108,6 +118,143 @@ class EditorViewModel(
                 _uiState.update { it.copy(presets = presets) }
             }
         }
+        refreshUserLuts()
+    }
+
+    // ---- LUTs ----
+
+    /** Aplica um LUT (ou tira, com null). Toque discreto: entra no histórico. */
+    fun applyLut(lutId: String?) {
+        clearAppliedPresetTracking()
+        val current = history.current
+        val intensity = if (lutId != null && lutId == current.lutId &&
+            current.lutIntensity > 0f
+        ) {
+            current.lutIntensity
+        } else {
+            1f
+        }
+        val updated = current.copy(
+            lutId = lutId,
+            lutIntensity = if (lutId == null) 0f else intensity
+        )
+        history.commit(updated)
+        persistDraft()
+        _uiState.update {
+            it.copy(
+                recipe = updated,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        refreshRender()
+    }
+
+    /** Arrasto do slider de intensidade do LUT: preview sem histórico. */
+    fun updateLutIntensity(intensity: Float) {
+        clearAppliedPresetTracking()
+        val blended = history.current.copy(lutIntensity = intensity.coerceIn(0f, 1f))
+        history.preview(blended)
+        _uiState.update { it.copy(recipe = blended) }
+        refreshRender()
+    }
+
+    /** Fim do gesto de intensidade do LUT: confirma no histórico. */
+    fun commitLutIntensity() {
+        history.commit(history.current)
+        persistDraft()
+        _uiState.update {
+            it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
+        }
+        refreshRender()
+    }
+
+    /**
+     * Importa um arquivo .cube: lê, converte para a grade 64³, salva
+     * em arquivos do app e aplica na hora. O motivo de qualquer
+     * recusa (formato, tamanho, leitura) vira mensagem na tela.
+     */
+    fun importLut(uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val bytes = try {
+                appContext.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            } catch (e: Exception) {
+                null
+            }
+            if (bytes == null || bytes.isEmpty() || bytes.size > MAX_CUBE_BYTES) {
+                _uiState.update { it.copy(message = "Não consegui ler este arquivo.") }
+                return@launch
+            }
+            when (val parsed = CubeParser.parse(String(bytes, Charsets.UTF_8))) {
+                is CubeParseResult.Fail -> {
+                    _uiState.update { it.copy(message = parsed.reason) }
+                }
+                is CubeParseResult.Ok -> {
+                    val grid = LutGrid.fromCube(parsed.cube)
+                    val id = sha256Hex(bytes)
+                    val fileName = displayNameFor(uri) ?: "arquivo.cube"
+                    val name = parsed.cube.title
+                        ?: fileName.substringBeforeLast(".").ifBlank { "LUT importado" }
+                    val saved = UserLutStore.save(
+                        appContext, id, name, fileName, parsed.cube.size, grid
+                    )
+                    if (saved == null) {
+                        _uiState.update {
+                            it.copy(message = "Não consegui salvar este LUT.")
+                        }
+                    } else {
+                        refreshUserLuts()
+                        withContext(Dispatchers.Main) { applyLut(saved.id) }
+                        _uiState.update {
+                            it.copy(message = "LUT \"${saved.name}\" importado.")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Apaga um LUT importado. Se ele estava aplicado, tira da foto. */
+    fun deleteUserLut(lutId: String) {
+        if (history.current.lutId == lutId) {
+            applyLut(null)
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            UserLutStore.delete(appContext, lutId)
+            LutGrids.evict(lutId)
+            refreshUserLuts()
+        }
+        _uiState.update { it.copy(message = "LUT apagado.") }
+    }
+
+    private fun refreshUserLuts() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val luts = UserLutStore.list(appContext)
+            _uiState.update { it.copy(userLuts = luts) }
+        }
+    }
+
+    private fun displayNameFor(uri: Uri): String? {
+        return try {
+            val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+            appContext.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return null
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index < 0) null else cursor.getString(index)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun sha256Hex(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        return digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+    }
+
+    companion object {
+        /** Um .cube 64³ tem ~800 KB; 8 MB é folga sem abrir a porta. */
+        private const val MAX_CUBE_BYTES: Int = 8 * 1024 * 1024
     }
 
     fun openPhoto(uri: Uri) {
@@ -438,7 +585,8 @@ class EditorViewModel(
         val recipe = history.current
         val geometry = currentGeometry
         viewModelScope.launch {
-            val result = PhotoExporter.exportJpeg(appContext, uri, recipe, geometry)
+            val lutGrid = lutGridFor(recipe)
+            val result = PhotoExporter.exportJpeg(appContext, uri, recipe, geometry, lutGrid)
             result.fold(
                 onSuccess = { savedUri ->
                     _uiState.update {
@@ -543,7 +691,7 @@ class EditorViewModel(
                 val base = if (recipe.isIdentity()) {
                     bitmap
                 } else {
-                    PhotoExporter.renderWithEngine(bitmap, recipe)
+                    PhotoExporter.renderWithEngine(bitmap, recipe, lutGridFor(recipe))
                 }
                 val final = GeometryTransform.apply(base, effectiveGeometry)
                 if (final !== base && base !== bitmap) {
@@ -566,6 +714,16 @@ class EditorViewModel(
                 // estourar para o usuário.
             }
         }
+    }
+
+    /**
+     * A grade do LUT da receita, pronta para a GPU — ou null (sem
+     * LUT, intensidade 0, ou LUT importado que foi apagado). Resolve
+     * fora da thread GL, com cache ([LutGrids]).
+     */
+    private fun lutGridFor(recipe: Recipe): Bitmap? {
+        if (recipe.lutId == null || recipe.lutIntensity <= 0f) return null
+        return LutGrids.bitmapFor(appContext, recipe.lutId)
     }
 
     private fun recyclePreview() {

@@ -49,14 +49,15 @@ object PhotoExporter {
         context: Context,
         photoUri: Uri,
         recipe: Recipe,
-        geometry: Geometry = Geometry.IDENTITY
+        geometry: Geometry = Geometry.IDENTITY,
+        lutGrid: Bitmap? = null
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val source = BitmapLoader.decodeFull(context, photoUri)
                 ?: return@withContext Result.failure(
                     IllegalStateException("Não foi possível abrir a foto original.")
                 )
-            val rendered = renderWithEngine(source, recipe)
+            val rendered = renderWithEngine(source, recipe, lutGrid)
             if (rendered !== source) {
                 source.recycle()
             }
@@ -79,18 +80,23 @@ object PhotoExporter {
     /**
      * Renderiza a receita sobre [source] com o motor GL; em qualquer
      * falha do motor, cai para [render] (matriz, CPU). Devolve um
-     * bitmap novo (nunca o [source]).
+     * bitmap novo (nunca o [source]). [lutGrid] é a grade do LUT da
+     * receita; o fallback de matriz ignora o LUT, igual a HSL/curva.
      */
-    suspend fun renderWithEngine(source: Bitmap, recipe: Recipe): Bitmap {
-        return GlEngine.render(source, recipe) ?: render(source, recipe)
+    suspend fun renderWithEngine(
+        source: Bitmap,
+        recipe: Recipe,
+        lutGrid: Bitmap? = null
+    ): Bitmap {
+        return GlEngine.render(source, recipe, lutGrid) ?: render(source, recipe)
     }
 
     /**
      * Renderiza a receita sobre [source] pela matriz de cor (CPU) e
      * devolve um bitmap novo. É o fallback do motor GL — e o caminho
      * que a tira de presets e as amostras da Biblioteca usam. Aplica
-     * só os campos de luz/cor global (v1); HSL, curva e efeitos são
-     * ignorados aqui.
+     * só os campos de luz/cor global (v1); HSL, curva, efeitos e LUT
+     * são ignorados aqui.
      */
     fun render(source: Bitmap, recipe: Recipe): Bitmap {
         val values = RecipeColorMatrix.values(recipe)

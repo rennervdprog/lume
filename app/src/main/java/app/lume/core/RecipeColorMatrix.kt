@@ -25,7 +25,10 @@ import kotlin.math.pow
  *   (deslocamento + contraste) que se move na direção certa, mas não é
  *   seletivo por faixa;
  * - vibrance vira saturação mais suave (60% da força);
- * - HSL, curva, claridade, vinheta, grão e desbotado são ignorados.
+ * - HSL, curva, claridade, vinheta, grão, desbotado e LUT são
+ *   ignorados. O LUT é uma tabela 3D — nenhuma matriz 4x5 o
+ *   representa; as miniaturas de LUT usam a amostragem em CPU
+ *   ([app.lume.imaging.LutGrid.sample]).
  * O shader é o caminho que aplica a receita inteira.
  */
 object RecipeColorMatrix {

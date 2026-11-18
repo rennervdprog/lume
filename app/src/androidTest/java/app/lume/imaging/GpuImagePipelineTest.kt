@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.lume.core.HslChannel
+import app.lume.core.LutColor
 import app.lume.core.Recipe
 import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
@@ -73,6 +74,108 @@ class GpuImagePipelineTest {
         val pixel = out!!.getPixel(32, 32)
         val r = Color.red(pixel)
         assertTrue("Exposição não dobrou: $r", r in 185..215)
+    }
+
+    @Test
+    fun lutIdentidadePreservaPixel() = runBlocking {
+        val grid = LutGrid.identity().toBitmap()
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val out = GlEngine.render(
+            source,
+            Recipe(lutId = "test-identity", lutIntensity = 1f),
+            grid
+        )
+        assertNotNull("Motor GL não renderizou com LUT", out)
+        val pixel = out!!.getPixel(32, 32)
+        assertTrue("R mudou demais: ${Color.red(pixel)}", abs(Color.red(pixel) - 120) <= 8)
+        assertTrue("G mudou demais: ${Color.green(pixel)}", abs(Color.green(pixel) - 60) <= 8)
+        assertTrue("B mudou demais: ${Color.blue(pixel)}", abs(Color.blue(pixel) - 30) <= 8)
+    }
+
+    @Test
+    fun lutVermelhoSolidoPintaDeVermelho() = runBlocking {
+        val grid = LutGrid.fromTransform { _, _, _ -> LutColor(1f, 0f, 0f) }.toBitmap()
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val out = GlEngine.render(
+            source,
+            Recipe(lutId = "test-red", lutIntensity = 1f),
+            grid
+        )
+        assertNotNull("Motor GL não renderizou com LUT", out)
+        val pixel = out!!.getPixel(32, 32)
+        assertTrue("R devia ser 255: ${Color.red(pixel)}", Color.red(pixel) >= 247)
+        assertTrue("G devia ser 0: ${Color.green(pixel)}", Color.green(pixel) <= 8)
+        assertTrue("B devia ser 0: ${Color.blue(pixel)}", Color.blue(pixel) <= 8)
+    }
+
+    @Test
+    fun lutTrocaCanaisProvaOrientacaoDaGrade() = runBlocking {
+        // (r,g,b) -> (g,b,r): só passa se a grade e o shader
+        // concordarem sobre qual eixo é qual — é a prova de
+        // orientação do formato HALD 64.
+        val grid = LutGrid.fromTransform { r, g, b -> LutColor(g, b, r) }.toBitmap()
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val out = GlEngine.render(
+            source,
+            Recipe(lutId = "test-swap", lutIntensity = 1f),
+            grid
+        )
+        assertNotNull("Motor GL não renderizou com LUT", out)
+        val pixel = out!!.getPixel(32, 32)
+        assertTrue("R devia ser 60: ${Color.red(pixel)}", abs(Color.red(pixel) - 60) <= 8)
+        assertTrue("G devia ser 30: ${Color.green(pixel)}", abs(Color.green(pixel) - 30) <= 8)
+        assertTrue("B devia ser 120: ${Color.blue(pixel)}", abs(Color.blue(pixel) - 120) <= 8)
+    }
+
+    @Test
+    fun lutIntensidadeMeioMisturaComOriginal() = runBlocking {
+        val grid = LutGrid.fromTransform { _, _, _ -> LutColor(1f, 0f, 0f) }.toBitmap()
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val out = GlEngine.render(
+            source,
+            Recipe(lutId = "test-red", lutIntensity = 0.5f),
+            grid
+        )
+        assertNotNull("Motor GL não renderizou com LUT", out)
+        val pixel = out!!.getPixel(32, 32)
+        assertTrue("R devia ser ~187: ${Color.red(pixel)}", abs(Color.red(pixel) - 187) <= 10)
+        assertTrue("G devia ser ~30: ${Color.green(pixel)}", abs(Color.green(pixel) - 30) <= 10)
+        assertTrue("B devia ser ~15: ${Color.blue(pixel)}", abs(Color.blue(pixel) - 15) <= 10)
+    }
+
+    @Test
+    fun lutSemGradeRenderizaOriginal() = runBlocking {
+        // Receita com LUT mas sem grade (importado apagado): o motor
+        // renderiza sem LUT, sem quebrar.
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val out = GlEngine.render(
+            source,
+            Recipe(lutId = "test-missing", lutIntensity = 1f),
+            null
+        )
+        assertNotNull("Motor GL não renderizou", out)
+        val pixel = out!!.getPixel(32, 32)
+        assertTrue("R mudou demais: ${Color.red(pixel)}", abs(Color.red(pixel) - 120) <= 8)
+        assertTrue("G mudou demais: ${Color.green(pixel)}", abs(Color.green(pixel) - 60) <= 8)
+        assertTrue("B mudou demais: ${Color.blue(pixel)}", abs(Color.blue(pixel) - 30) <= 8)
+    }
+
+    @Test
+    fun lutTrocaDeGradeNoMesmoPipeline() = runBlocking {
+        // Segunda grade no mesmo pipeline: prova que a textura do
+        // LUT é recarregada ao trocar (o LookupFilter da biblioteca
+        // não faz isso — motivo do filtro próprio).
+        val redGrid = LutGrid.fromTransform { _, _, _ -> LutColor(1f, 0f, 0f) }.toBitmap()
+        val blueGrid = LutGrid.fromTransform { _, _, _ -> LutColor(0f, 0f, 1f) }.toBitmap()
+        val source = solidBitmap(64, 64, Color.rgb(120, 60, 30))
+        val first = GlEngine.render(source, Recipe(lutId = "a", lutIntensity = 1f), redGrid)
+        assertNotNull("Primeiro render com LUT falhou", first)
+        assertTrue("Primeiro devia ser vermelho", Color.red(first!!.getPixel(32, 32)) >= 247)
+        val second = GlEngine.render(source, Recipe(lutId = "b", lutIntensity = 1f), blueGrid)
+        assertNotNull("Segundo render com LUT falhou", second)
+        val pixel = second!!.getPixel(32, 32)
+        assertTrue("Segundo devia ser azul: ($pixel)", Color.blue(pixel) >= 247)
+        assertTrue("Segundo devia ser azul: ($pixel)", Color.red(pixel) <= 8)
     }
 
     private fun solidBitmap(width: Int, height: Int, color: Int): Bitmap =

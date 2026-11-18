@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Brightness3
 import androidx.compose.material.icons.filled.Brightness7
 import androidx.compose.material.icons.filled.BrightnessHigh
@@ -71,11 +72,16 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import android.graphics.Bitmap
+import app.lume.core.BuiltInLuts
 import app.lume.core.HslChannel
 import app.lume.core.HslChannels
 import app.lume.core.Geometry
@@ -85,6 +91,8 @@ import app.lume.core.Recipe
 import app.lume.core.RecipeColorMatrix
 import app.lume.core.ToneCurve
 import app.lume.core.ToneCurveLut
+import app.lume.data.UserLut
+import app.lume.imaging.LutGrids
 import app.lume.ui.components.PresetSwatch
 import app.lume.ui.theme.LumeSpacing
 import kotlin.math.roundToInt
@@ -694,6 +702,7 @@ internal fun HistoryPanel(
     onClearGeometry: () -> Unit,
     onCopyEdit: () -> Unit,
     onReset: () -> Unit,
+    lutDisplayName: String? = null,
     modifier: Modifier = Modifier
 ) {
     val steps = buildList {
@@ -703,6 +712,15 @@ internal fun HistoryPanel(
                     "Preset · $appliedPresetName",
                     "${(presetIntensity * 100f).roundToInt()}%",
                     null as Recipe?
+                )
+            )
+        }
+        if (recipe.lutId != null) {
+            add(
+                Triple(
+                    "LUT · ${lutDisplayName ?: "LUT"}",
+                    "${(recipe.lutIntensity * 100f).roundToInt()}%",
+                    recipe.copy(lutId = null, lutIntensity = 0f)
                 )
             )
         }
@@ -870,6 +888,14 @@ internal fun HistoryPanel(
 }
 
 @Composable
+/** Abas do painel Filtro: presets (Todos + coleções) e LUTs. */
+internal sealed interface FilterTab {
+    data object All : FilterTab
+    data object Luts : FilterTab
+    data object MyLuts : FilterTab
+    data class Collection(val name: String) : FilterTab
+}
+
 internal fun FilterPanel(
     presets: List<Preset>,
     preview: ImageBitmap?,
@@ -883,17 +909,24 @@ internal fun FilterPanel(
     onSharePresetClick: (Preset) -> Unit,
     onShuffleClick: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
+    userLuts: List<UserLut> = emptyList(),
+    selectedLutId: String? = null,
+    lutIntensity: Float = 1f,
+    onApplyLut: (String?) -> Unit = {},
+    onLutIntensityChange: (Float) -> Unit = {},
+    onLutIntensityFinished: () -> Unit = {},
+    onImportLutClick: () -> Unit = {},
+    onDeleteLut: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
-    var selectedCollection by remember(presets) { mutableStateOf<String?>(null) }
+    var selectedTab by remember(presets) { mutableStateOf<FilterTab>(FilterTab.All) }
     val collections = remember(presets) {
         presets.map { it.collection }.distinct()
     }
-    val visiblePresets = if (selectedCollection == null) {
-        presets
-    } else {
-        presets.filter { it.collection == selectedCollection }
+    val visiblePresets = when (val tab = selectedTab) {
+        is FilterTab.Collection -> presets.filter { it.collection == tab.name }
+        else -> presets
     }
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -912,70 +945,54 @@ internal fun FilterPanel(
             item {
                 TextTab(
                     label = "Todos",
-                    selected = selectedCollection == null,
-                    onClick = { selectedCollection = null }
+                    selected = selectedTab == FilterTab.All,
+                    onClick = { selectedTab = FilterTab.All }
+                )
+            }
+            item {
+                TextTab(
+                    label = "LUTs",
+                    selected = selectedTab == FilterTab.Luts,
+                    onClick = { selectedTab = FilterTab.Luts }
+                )
+            }
+            item {
+                TextTab(
+                    label = "Meus LUTs",
+                    selected = selectedTab == FilterTab.MyLuts,
+                    onClick = { selectedTab = FilterTab.MyLuts }
                 )
             }
             items(collections) { collection ->
                 TextTab(
                     label = collection,
-                    selected = selectedCollection == collection,
-                    onClick = { selectedCollection = collection }
+                    selected = selectedTab == FilterTab.Collection(collection),
+                    onClick = { selectedTab = FilterTab.Collection(collection) }
                 )
             }
         }
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = LumeSpacing.md),
-            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
-        ) {
-            item {
-                PresetThumbSquare(
-                    label = "Original",
-                    selected = appliedPresetName == null,
-                    onClick = onClearPreset
-                ) {
-                    if (preview != null) {
-                        Image(
-                            bitmap = preview,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
-            items(items = visiblePresets, key = { it.id }) { preset ->
-                val selected = preset.name == appliedPresetName
-                // Miniatura rápida pela matriz (aproximação v1): HSL,
-                // curva e efeitos do preset só aparecem na foto grande
-                // e na exportação, que passam pelo motor. A tira vai
-                // para o motor quando presets v2 virarem o caso comum.
-                val filter = remember(preset.recipe) {
-                    ColorFilter.colorMatrix(
-                        ColorMatrix(RecipeColorMatrix.values(preset.recipe))
-                    )
-                }
-                PresetThumbSquare(
-                    label = preset.name,
-                    selected = selected,
-                    onClick = { onApplyPreset(preset) }
-                ) {
-                    if (preview != null) {
-                        Image(
-                            bitmap = preview,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            colorFilter = filter,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        PresetSwatch(
-                            preset = preset,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-            }
+        when (selectedTab) {
+            is FilterTab.Luts -> LutFilmstrip(
+                preview = preview,
+                selectedLutId = selectedLutId,
+                onApplyLut = onApplyLut,
+                onImportLutClick = onImportLutClick
+            )
+            is FilterTab.MyLuts -> MyLutFilmstrip(
+                preview = preview,
+                userLuts = userLuts,
+                selectedLutId = selectedLutId,
+                onApplyLut = onApplyLut,
+                onImportLutClick = onImportLutClick,
+                onDeleteLut = onDeleteLut
+            )
+            else -> PresetFilmstrip(
+                presets = visiblePresets,
+                preview = preview,
+                appliedPresetName = appliedPresetName,
+                onApplyPreset = onApplyPreset,
+                onClearPreset = onClearPreset
+            )
         }
         // Ações na própria linha, sempre no mesmo lugar: o QR fica
         // desativado (não some) sem preset aplicado.
@@ -1054,6 +1071,347 @@ internal fun FilterPanel(
                 modifier = Modifier.padding(horizontal = LumeSpacing.md)
             )
         }
+        if (selectedLutId != null) {
+            SlimSliderRow(
+                caption = "Intensidade do LUT",
+                value = lutIntensity * 100f,
+                valueRange = 0f..100f,
+                onValueChange = { onLutIntensityChange(it / 100f) },
+                onValueChangeFinished = onLutIntensityFinished,
+                formatValue = { "${it.roundToInt()}%" },
+                onReset = {
+                    onLutIntensityChange(1f)
+                    onLutIntensityFinished()
+                },
+                onCompareChange = onCompareChange,
+                modifier = Modifier.padding(horizontal = LumeSpacing.md)
+            )
+        }
+    }
+}
+
+/** Tira de presets (aba Todos ou uma coleção): código original do painel. */
+@Composable
+private fun PresetFilmstrip(
+    presets: List<Preset>,
+    preview: ImageBitmap?,
+    appliedPresetName: String?,
+    onApplyPreset: (Preset) -> Unit,
+    onClearPreset: () -> Unit
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = LumeSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+    ) {
+        item {
+            PresetThumbSquare(
+                label = "Original",
+                selected = appliedPresetName == null,
+                onClick = onClearPreset
+            ) {
+                if (preview != null) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+        items(items = presets, key = { it.id }) { preset ->
+            val selected = preset.name == appliedPresetName
+            // Miniatura rápida pela matriz (aproximação v1): HSL,
+            // curva e efeitos do preset só aparecem na foto grande
+            // e na exportação, que passam pelo motor. A tira vai
+            // para o motor quando presets v2 virarem o caso comum.
+            val filter = remember(preset.recipe) {
+                ColorFilter.colorMatrix(
+                    ColorMatrix(RecipeColorMatrix.values(preset.recipe))
+                )
+            }
+            PresetThumbSquare(
+                label = preset.name,
+                selected = selected,
+                onClick = { onApplyPreset(preset) }
+            ) {
+                if (preview != null) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        colorFilter = filter,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    PresetSwatch(
+                        preset = preset,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Tira da aba LUTs: "Sem LUT" + os 6 LUTs próprios do Lume. */
+@Composable
+private fun LutFilmstrip(
+    preview: ImageBitmap?,
+    selectedLutId: String?,
+    onApplyLut: (String?) -> Unit,
+    onImportLutClick: () -> Unit
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = LumeSpacing.md),
+        horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+    ) {
+        item {
+            LutImportCard(onClick = onImportLutClick)
+        }
+        item {
+            LutThumbSquare(
+                label = "Sem LUT",
+                selected = selectedLutId == null,
+                onClick = { onApplyLut(null) }
+            ) {
+                if (preview != null) {
+                    Image(
+                        bitmap = preview,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        bitmap = lutFallbackBitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+        items(items = BuiltInLuts.all, key = { it.id }) { lut ->
+            val thumb = rememberLutThumb(preview, lut.id)
+            LutThumbSquare(
+                label = lut.name,
+                selected = lut.id == selectedLutId,
+                onClick = { onApplyLut(lut.id) }
+            ) {
+                if (thumb != null) {
+                    Image(
+                        bitmap = thumb,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Tira da aba Meus LUTs: importar + os .cube do usuário, com ✕. */
+@Composable
+private fun MyLutFilmstrip(
+    preview: ImageBitmap?,
+    userLuts: List<UserLut>,
+    selectedLutId: String?,
+    onApplyLut: (String?) -> Unit,
+    onImportLutClick: () -> Unit,
+    onDeleteLut: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)) {
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = LumeSpacing.md),
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+        ) {
+            item {
+                LutImportCard(onClick = onImportLutClick)
+            }
+            items(items = userLuts, key = { it.id }) { lut ->
+                val thumb = rememberLutThumb(preview, lut.id)
+                LutThumbSquare(
+                    label = lut.name,
+                    selected = lut.id == selectedLutId,
+                    onClick = { onApplyLut(lut.id) },
+                    onDeleteClick = { onDeleteLut(lut.id) }
+                ) {
+                    if (thumb != null) {
+                        Image(
+                            bitmap = thumb,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        }
+        if (userLuts.isEmpty()) {
+            Text(
+                text = "Nenhum LUT importado ainda. Toque em Importar " +
+                    "e escolha um arquivo .cube de qualquer fotógrafo ou pacote.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = LumeSpacing.md)
+            )
+        }
+    }
+}
+
+/**
+ * Miniatura de um LUT sobre a foto aberta (ou sobre as faixas de cor,
+ * sem foto): a grade é aplicada em CPU numa cópia reduzida — a
+ * miniatura é o LUT de verdade, não uma aproximação de matriz. O
+ * cálculo roda uma vez por (foto, LUT) e fica no remember.
+ */
+@Composable
+private fun rememberLutThumb(preview: ImageBitmap?, lutId: String): ImageBitmap? {
+    val context = LocalContext.current
+    return remember(preview, lutId) {
+        val grid = LutGrids.gridFor(context, lutId) ?: return@remember null
+        val source = preview?.asAndroidBitmap()?.let { downscaleThumb(it) }
+            ?: lutFallbackBitmap
+        grid.applyTo(source).asImageBitmap()
+    }
+}
+
+private fun downscaleThumb(source: Bitmap, targetWidth: Int = 144): Bitmap {
+    if (source.width <= targetWidth) return source
+    val height = (source.height * targetWidth / source.width).coerceAtLeast(1)
+    return Bitmap.createScaledBitmap(source, targetWidth, height, true)
+}
+
+/**
+ * Faixas de cor de reserva para as miniaturas sem foto aberta: pele,
+ * céu, folha, calor, neutro — as mesmas cores da amostra de preset.
+ * Uma única instância compartilhada (a aplicação do LUT só lê).
+ */
+private val lutFallbackBitmap: Bitmap by lazy {
+    val width = 144
+    val height = 144
+    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+        val bands = arrayOf(
+            Triple(217, 160, 122),
+            Triple(127, 168, 217),
+            Triple(123, 160, 91),
+            Triple(217, 179, 106),
+            Triple(138, 143, 148)
+        )
+        for (y in 0 until height) {
+            val shade = 1f - (y.toFloat() / height) * 0.45f
+            for (x in 0 until width) {
+                val (r0, g0, b0) = bands[(x * bands.size) / width]
+                val r = (r0 * shade).toInt()
+                val g = (g0 * shade).toInt()
+                val b = (b0 * shade).toInt()
+                setPixel(x, y, (0xFF shl 24) or (r shl 16) or (g shl 8) or b)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LutThumbSquare(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onDeleteClick: (() -> Unit)? = null,
+    thumbnail: @Composable () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(72.dp)
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .then(
+                    if (selected) {
+                        Modifier.border(
+                            2.dp,
+                            MaterialTheme.colorScheme.primary,
+                            RoundedCornerShape(12.dp)
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
+        ) {
+            thumbnail()
+            if (onDeleteClick != null) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(22.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        .clip(CircleShape)
+                        .clickable(onClick = onDeleteClick)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Apagar $label",
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+            }
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = if (selected) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = LumeSpacing.xxs)
+        )
+    }
+}
+
+@Composable
+private fun LutImportCard(onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(72.dp)
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(72.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Text(
+            text = "Importar",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = LumeSpacing.xxs)
+        )
     }
 }
 
@@ -1124,6 +1482,9 @@ internal fun PresetRecipeStack(preset: Preset, modifier: Modifier = Modifier) {
         if (recipe.vignette != 0f) add("Vinheta" to formatSigned(recipe.vignette))
         if (recipe.grain != 0f) add("Grão" to formatSigned(recipe.grain))
         if (recipe.fade != 0f) add("Desbotado" to formatSigned(recipe.fade))
+        if (recipe.lutId != null) {
+            add("LUT" to (BuiltInLuts.displayName(recipe.lutId) ?: "LUT importado"))
+        }
         if (!recipe.curve.isEffectiveIdentity()) {
             val curveName = ToneCurve.presetNameFor(recipe.curve.master) ?: "Personalizada"
             add("Curva de tons" to curveName)

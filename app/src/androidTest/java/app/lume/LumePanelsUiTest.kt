@@ -279,6 +279,43 @@ class LumePanelsUiTest {
     }
 
     @Test
+    fun painelFiltro_mostraAbasLutEIntensidade() {
+        var selectedLut: String? by mutableStateOf(null)
+        composeRule.setContent {
+            LumeTheme {
+                FilterPanel(
+                    presets = BuiltInPresets.all,
+                    preview = null,
+                    appliedPresetName = null,
+                    presetIntensity = 1f,
+                    onApplyPreset = {},
+                    onClearPreset = {},
+                    onIntensityChange = {},
+                    onIntensityFinished = {},
+                    onSavePresetClick = {},
+                    onSharePresetClick = {},
+                    onShuffleClick = {},
+                    onCompareChange = {},
+                    selectedLutId = selectedLut,
+                    lutIntensity = 0.8f,
+                    onApplyLut = { selectedLut = it }
+                )
+            }
+        }
+        composeRule.onNodeWithText("LUTs").assertIsDisplayed()
+        composeRule.onNodeWithText("Meus LUTs").assertIsDisplayed()
+        composeRule.onNodeWithText("LUTs").performClick()
+        composeRule.onNodeWithText("Sem LUT").assertIsDisplayed()
+        composeRule.onNodeWithText("Importar").assertIsDisplayed()
+        // O primeiro LUT está visível na tira sem rolar.
+        composeRule.onNodeWithText("Laranja & Verde-azulado").assertIsDisplayed()
+        // Aplicar um LUT mostra o slider de intensidade do LUT.
+        composeRule.onNodeWithText("Laranja & Verde-azulado").performClick()
+        composeRule.onNodeWithText("Intensidade do LUT").assertIsDisplayed()
+        uitestShot("17_filtro_luts")
+    }
+
+    @Test
     fun painelHistorico_mostraPassosERemoveUm() {
         val cleared = mutableListOf<Recipe>()
         composeRule.setContent {

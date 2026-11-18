@@ -3,6 +3,8 @@ package app.lume.ui.editor
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -72,6 +74,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lume.core.BuiltInLuts
 import app.lume.core.Preset
 import app.lume.core.RecipeJson
 import app.lume.imaging.PresetQr
@@ -115,6 +118,22 @@ fun EditorScreen(
         // vale para ela (valia só para a foto que abriu o Editor).
         pendingPresetId = null
         viewModel.openPhoto(uri)
+    }
+
+    // Importar .cube: o formato não tem MIME registrado, então o
+    // seletor abre sem filtro e a validação é do conteúdo.
+    val importLutLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importLut(uri)
+        }
+    }
+
+    // Nome do LUT atual para o passo do Histórico.
+    val lutDisplayName = state.recipe.lutId?.let { id ->
+        BuiltInLuts.displayName(id)
+            ?: state.userLuts.firstOrNull { it.id == id }?.name
     }
 
     ShowMessageAsSnackbar(
@@ -596,7 +615,15 @@ fun EditorScreen(
                                     viewModel.applyPreset(pick)
                                 }
                             },
-                            onCompareChange = { showOriginal = it }
+                            onCompareChange = { showOriginal = it },
+                            userLuts = state.userLuts,
+                            selectedLutId = state.recipe.lutId,
+                            lutIntensity = state.recipe.lutIntensity,
+                            onApplyLut = { viewModel.applyLut(it) },
+                            onLutIntensityChange = { viewModel.updateLutIntensity(it) },
+                            onLutIntensityFinished = { viewModel.commitLutIntensity() },
+                            onImportLutClick = { importLutLauncher.launch("*/*") },
+                            onDeleteLut = { viewModel.deleteUserLut(it) }
                         )
                         EditorTool.HISTORY -> HistoryPanel(
                             recipe = state.recipe,
@@ -612,7 +639,8 @@ fun EditorScreen(
                             onClearPreset = { viewModel.clearPreset() },
                             onClearGeometry = { viewModel.resetGeometry() },
                             onCopyEdit = { viewModel.copyCurrentEdit() },
-                            onReset = { viewModel.resetAdjustments() }
+                            onReset = { viewModel.resetAdjustments() },
+                            lutDisplayName = lutDisplayName
                         )
                     }
                 }

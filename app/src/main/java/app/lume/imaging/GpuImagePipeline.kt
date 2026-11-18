@@ -37,10 +37,11 @@ import jp.co.cyberagent.android.gpuimage.filter.GPUImageWhiteBalanceFilter
  *
  * Ordem da cadeia (contrato de portabilidade de presets): exposição
  * → balanço de branco → contraste → saturação → vibração → HSL →
- * curva composta (master + faixas tonais + desbotado) → claridade →
- * vinheta. O grão NÃO está na cadeia: a GPUImage não tem filtro de
- * grão e o campo [Recipe.grain] fica preservado nos dados para um
- * filtro próprio futuro — sem slider falso na UI.
+ * curva composta (master + faixas tonais + desbotado) → LUT de
+ * acabamento → claridade → vinheta. O grão NÃO está na cadeia: a
+ * GPUImage não tem filtro de grão e o campo [Recipe.grain] fica
+ * preservado nos dados para um filtro próprio futuro — sem slider
+ * falso na UI.
  *
  * Limite honesto: fotos maiores que o limite de textura da GPU
  * ([GLES20.GL_MAX_TEXTURE_SIZE]) estouram em [setSource] — o chamador
@@ -56,6 +57,7 @@ internal class GpuImagePipeline {
     private val vibranceFilter = GPUImageVibranceFilter()
     private val hslFilter = HslMixerFilter()
     private val toneCurveFilter = GPUImageToneCurveFilter()
+    private val lutFilter = LutFilter()
     private val sharpenFilter = GPUImageSharpenFilter()
     private val vignetteFilter = GPUImageVignetteFilter()
 
@@ -68,6 +70,7 @@ internal class GpuImagePipeline {
             vibranceFilter,
             hslFilter,
             toneCurveFilter,
+            lutFilter,
             sharpenFilter,
             vignetteFilter
         )
@@ -79,6 +82,14 @@ internal class GpuImagePipeline {
     private var bufferHeight: Int = 0
     private var maxTextureSize: Int = 0
     private var vignetteStaticSet: Boolean = false
+
+    /**
+     * A grade LUT cuja textura já está na GPU. Subir a textura a
+     * cada render custaria um upload de 1 MB por gesto de slider —
+     * só sobe quando a instância muda. Zerado quando o grupo é
+     * destruído (a textura morre com o contexto).
+     */
+    private var lastLutGrid: Bitmap? = null
 
     /**
      * Sobe [bitmap] como textura. Recria o pbuffer se o tamanho mudou.
@@ -93,10 +104,15 @@ internal class GpuImagePipeline {
         renderer?.setImageBitmap(bitmap, false)
     }
 
-    /** Renderiza [recipe] sobre a foto de [setSource] e devolve um bitmap novo. */
-    fun render(recipe: Recipe): Bitmap {
+    /**
+     * Renderiza [recipe] sobre a foto de [setSource] e devolve um
+     * bitmap novo. [lutGrid] é o bitmap 512×512 da grade do LUT da
+     * receita (resolvido pelo chamador): null ou intensidade 0
+     * desliga o LUT sem tocar na textura.
+     */
+    fun render(recipe: Recipe, lutGrid: Bitmap? = null): Bitmap {
         val active = buffer ?: throw IllegalStateException("setSource não chamado.")
-        applyRecipe(recipe.clamped())
+        applyRecipe(recipe.clamped(), lutGrid)
         return active.getBitmap()
             ?: throw IllegalStateException("PixelBuffer sem renderer (thread errada?).")
     }
@@ -124,6 +140,7 @@ internal class GpuImagePipeline {
         bufferHeight = 0
         maxTextureSize = 0
         vignetteStaticSet = false
+        lastLutGrid = null
     }
 
     private fun recreateBuffer(width: Int, height: Int) {
@@ -164,6 +181,9 @@ internal class GpuImagePipeline {
         renderer = freshRenderer
         bufferWidth = width
         bufferHeight = height
+        // O grupo foi destruído acima: a textura do LUT morreu com
+        // o contexto antigo — o próximo render sobe a grade de novo.
+        lastLutGrid = null
         if (!vignetteStaticSet) {
             // O centro padrão do filtro é (0,0) — o canto. Centro real
             // é o meio da foto; cor preta, igual ao motor anterior.
@@ -179,7 +199,7 @@ internal class GpuImagePipeline {
      * chamado de qualquer thread, mas na prática roda na thread GL.
      * As faixas de cada filtro foram lidas no fonte da GPUImage 2.1.0.
      */
-    private fun applyRecipe(recipe: Recipe) {
+    private fun applyRecipe(recipe: Recipe, lutGrid: Bitmap?) {
         // Exposição: o shader multiplica por 2^exposure — a receita já
         // está em EV (-2..2), sem conversão.
         exposureFilter.setExposure(recipe.exposure)
@@ -200,6 +220,18 @@ internal class GpuImagePipeline {
             .map { PointF(it.x, it.y) }
             .toTypedArray()
         toneCurveFilter.setRgbCompositeControlPoints(points)
+        // LUT de acabamento: sem grade (LUT importado apagado, por
+        // exemplo) ou intensidade 0, o filtro vira passagem direta.
+        // A textura só sobe quando a grade muda de instância.
+        if (lutGrid != null && recipe.lutIntensity > 0f) {
+            if (lutGrid !== lastLutGrid) {
+                lutFilter.setLutBitmap(lutGrid)
+                lastLutGrid = lutGrid
+            }
+            lutFilter.setIntensity(recipe.lutIntensity)
+        } else {
+            lutFilter.setIntensity(0f)
+        }
         // Claridade via nitidez: -4..4 no filtro, usamos ±2. É uma
         // aproximação honesta (o motor anterior também aproximava).
         sharpenFilter.setSharpness(recipe.clarity / 100f * 2f)

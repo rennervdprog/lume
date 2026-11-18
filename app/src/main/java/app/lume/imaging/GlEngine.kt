@@ -51,8 +51,15 @@ object GlEngine {
     /**
      * Renderiza [recipe] sobre [source] via GPUImage. Retorna o bitmap
      * editado, ou null se o motor falhar (chamador usa o fallback).
+     * [lutGrid] é o bitmap 512×512 da grade do LUT da receita,
+     * resolvido pelo chamador ([LutGrids]): o motor só sobe a
+     * textura — nunca lê arquivo nem gera grade na thread GL.
      */
-    suspend fun render(source: Bitmap, recipe: Recipe): Bitmap? =
+    suspend fun render(
+        source: Bitmap,
+        recipe: Recipe,
+        lutGrid: Bitmap? = null
+    ): Bitmap? =
         withContext(glDispatcher) {
             try {
                 val active = pipeline ?: GpuImagePipeline().also {
@@ -62,7 +69,7 @@ object GlEngine {
                     active.setSource(source)
                     currentSource = source
                 }
-                active.render(recipe)
+                active.render(recipe, lutGrid)
             } catch (e: CancellationException) {
                 // Cancelamento de gesto (novo render entrou): nunca
                 // engolir — senão o render velho atualiza a tela.

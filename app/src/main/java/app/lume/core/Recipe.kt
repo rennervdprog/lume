@@ -20,9 +20,10 @@ import kotlinx.serialization.Serializable
  * Versões: v1 tinha só luz/cor global. A v2 (Fase 1) adiciona HSL,
  * curva e efeitos — todos com default = identidade, então JSON v1
  * decodifica direto (ver [RecipeJson]) e [clamped] normaliza a versão.
- * Ao adicionar um campo, incremente [CURRENT_VERSION], dê default
- * identidade e estenda [interpolatedTo] e [clamped]. Nunca quebre
- * receitas/presets antigos sem migração.
+ * A v3 adiciona o LUT de acabamento ([lutId]/[lutIntensity]), também
+ * com default identidade. Ao adicionar um campo, incremente
+ * [CURRENT_VERSION], dê default identidade e estenda [interpolatedTo]
+ * e [clamped]. Nunca quebre receitas/presets antigos sem migração.
  */
 @Serializable
 data class Recipe(
@@ -42,7 +43,16 @@ data class Recipe(
     val clarity: Float = 0f,
     val vignette: Float = 0f,
     val grain: Float = 0f,
-    val fade: Float = 0f
+    val fade: Float = 0f,
+    /**
+     * LUT de acabamento (v3): id de um LUT próprio ("lut-…") ou de
+     * um importado (SHA-256 do .cube). Null = sem LUT. O LUT aplica
+     * por último na cadeia de cor, depois da curva — e é ignorado
+     * pelo fallback de matriz (ver [RecipeColorMatrix]).
+     */
+    val lutId: String? = null,
+    /** Intensidade do LUT, 0..1. Só vale quando [lutId] != null. */
+    val lutIntensity: Float = 0f
 ) {
     fun isIdentity(): Boolean = this == Recipe(version = version)
 
@@ -70,7 +80,13 @@ data class Recipe(
             clarity = lerp(clarity, other.clarity),
             vignette = lerp(vignette, other.vignette),
             grain = lerp(grain, other.grain),
-            fade = lerp(fade, other.fade)
+            fade = lerp(fade, other.fade),
+            // O LUT é discreto: em fração 0 a receita é exatamente
+            // esta (o LUT atual fica); acima de 0, vale o LUT do
+            // destino, com a intensidade interpolada — arrastar a
+            // intensidade de um preset com LUT dissolve o LUT junto.
+            lutId = if (f <= 0f) lutId else other.lutId,
+            lutIntensity = lerp(lutIntensity, other.lutIntensity)
         )
     }
 
@@ -93,11 +109,13 @@ data class Recipe(
         clarity = clarity.coerceIn(-100f, 100f),
         vignette = vignette.coerceIn(-100f, 100f),
         grain = grain.coerceIn(-100f, 100f),
-        fade = fade.coerceIn(-100f, 100f)
+        fade = fade.coerceIn(-100f, 100f),
+        lutId = lutId?.ifBlank { null },
+        lutIntensity = lutIntensity.coerceIn(0f, 1f)
     )
 
     companion object {
-        const val CURRENT_VERSION: Int = 2
+        const val CURRENT_VERSION: Int = 3
         val IDENTITY: Recipe = Recipe()
     }
 }
