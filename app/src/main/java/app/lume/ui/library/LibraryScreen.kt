@@ -66,6 +66,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -117,6 +118,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** O preset que a demonstração da aba Presets mostra (antes/depois). */
@@ -208,6 +210,7 @@ fun PhotosTab(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var selectionMode by remember { mutableStateOf(false) }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
     var query by remember { mutableStateOf("") }
@@ -227,12 +230,16 @@ fun PhotosTab(
 
     // Volta ao app (Configurações, janela de permissão): a seleção
     // parcial pode ter crescido sem o status mudar — reconsulta.
+    // O efeito de ciclo de vida não é coroutine: a consulta (suspensa)
+    // roda no escopo da tela.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val current = permissionState.status
         if (current == PhotoPermissionStatus.GRANTED ||
             current == PhotoPermissionStatus.PARTIAL
         ) {
-            photos = DevicePhotos.query(context)
+            scope.launch {
+                photos = DevicePhotos.query(context)
+            }
         }
     }
 
@@ -309,7 +316,8 @@ fun PhotosTab(
                                     count = photos.size,
                                     onAddMore = requestPhotoPermission,
                                     modifier = Modifier.padding(
-                                        horizontal = LumeSpacing.md,
+                                        start = LumeSpacing.md,
+                                        end = LumeSpacing.md,
                                         bottom = LumeSpacing.xs
                                     )
                                 )
