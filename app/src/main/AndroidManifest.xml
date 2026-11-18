@@ -1,9 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Fase 0: nenhuma permissão. A foto entra pelo seletor de fotos do
-         sistema (Photo Picker), que não exige permissão de mídia, e a
-         exportação sai pela MediaStore. Sem rede, sem câmera nesta fase. -->
+    <!-- Permissão de fotos (0.11.0): só existe por causa da grade da
+         tela inicial, que lista as fotos do aparelho pela MediaStore.
+         Sem ela, o app continua funcionando pelo seletor de fotos do
+         sistema (Photo Picker), que não exige permissão nenhuma. A
+         exportação sai pela MediaStore. Sem rede, sem câmera: a
+         permissão de câmera só entra quando a câmera dentro do app
+         existir. READ_MEDIA_IMAGES vale do Android 13 em diante;
+         aparelhos mais antigos usam READ_EXTERNAL_STORAGE; o acesso
+         parcial ("só algumas fotos") é do Android 14 em diante. -->
+
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
 
     <application
         android:name=".LumeApp"

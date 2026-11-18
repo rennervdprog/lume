@@ -26,6 +26,11 @@ object BitmapLoader {
         return decodeSampled(context, uri, PREVIEW_MAX_DIMENSION)
     }
 
+    /** Miniatura pequena (grade de fotos, cartões): lado maior de 256px. */
+    fun decodeThumbnail(context: Context, uri: Uri): Bitmap? {
+        return decodeSampled(context, uri, 256)
+    }
+
     fun decodeFull(context: Context, uri: Uri): Bitmap? {
         return try {
             val bitmap = context.contentResolver.openInputStream(uri)?.use { stream ->

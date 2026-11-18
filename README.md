@@ -18,14 +18,14 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até as fotos genéricas nos presets (run 20, commit `ec42f4e`,
-0.9.2, APK entregue). Editor v4 com nomes novos (0.10.0) escrito
-localmente, aguardando envio:** trilho com 4 ferramentas (Cortar,
-Filtro, Ajustar, Histórico), Luz+Cor+Efeitos unificados no Ajustar
-com trilho de ícones rolável, slider com botão de zerar, botão de
-comparar (segurar) e bolha do valor, proporções do Cortar todas
-visíveis com o desenho do formato, "Limpar tudo" no Histórico.
-Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
+verde até o Editor v4 (run 24, commit `3c8da2c`, 0.10.0, APK
+entregue). Home v4 + permissões (0.11.0) escrita localmente,
+aguardando envio:** navegação inferior (Fotos, Presets, Conta),
+grade de fotos do aparelho pela MediaStore com busca, fluxo de
+permissão de fotos (explicação, acesso parcial, negado, botão +
+sempre pelo seletor do sistema) e miniatura dos rascunhos em
+arquivo (o cartão mostra a foto mesmo com a permissão do seletor
+vencida). Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste

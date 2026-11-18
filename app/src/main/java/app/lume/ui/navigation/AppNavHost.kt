@@ -8,11 +8,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.lume.di.AppContainer
-import app.lume.ui.account.AccountScreen
 import app.lume.ui.account.AccountViewModel
 import app.lume.ui.editor.EditorScreen
 import app.lume.ui.editor.EditorViewModel
-import app.lume.ui.library.LibraryScreen
+import app.lume.ui.library.HomeScreen
 import app.lume.ui.library.LibraryViewModel
 import app.lume.ui.paywall.PaywallScreen
 import app.lume.ui.paywall.PaywallViewModel
@@ -20,7 +19,6 @@ import app.lume.ui.paywall.PaywallViewModel
 object Routes {
     const val LIBRARY: String = "library"
     const val EDITOR: String = "editor"
-    const val ACCOUNT: String = "account"
     const val PAYWALL: String = "paywall"
 }
 
@@ -40,13 +38,16 @@ fun AppNavHost(
             val libraryViewModel: LibraryViewModel = viewModel(
                 factory = container.libraryViewModelFactory()
             )
-            LibraryScreen(
-                viewModel = libraryViewModel,
+            val accountViewModel: AccountViewModel = viewModel(
+                factory = container.accountViewModelFactory()
+            )
+            HomeScreen(
+                libraryViewModel = libraryViewModel,
+                accountViewModel = accountViewModel,
                 onOpenEditor = { uri ->
                     editorViewModel.openPhoto(uri)
                     navController.navigate(Routes.EDITOR)
                 },
-                onOpenAccount = { navController.navigate(Routes.ACCOUNT) },
                 onOpenPaywall = { navController.navigate(Routes.PAYWALL) }
             )
         }
@@ -55,15 +56,6 @@ fun AppNavHost(
                 viewModel = editorViewModel,
                 onBack = { navController.popBackStack() },
                 onOpenPaywall = { navController.navigate(Routes.PAYWALL) }
-            )
-        }
-        composable(Routes.ACCOUNT) {
-            val accountViewModel: AccountViewModel = viewModel(
-                factory = container.accountViewModelFactory()
-            )
-            AccountScreen(
-                viewModel = accountViewModel,
-                onBack = { navController.popBackStack() }
             )
         }
         composable(Routes.PAYWALL) {

@@ -16,6 +16,7 @@ import app.lume.core.Preset
 import app.lume.data.PresetLimitReached
 import app.lume.core.Recipe
 import app.lume.data.DraftRepository
+import app.lume.data.DraftThumbnails
 import app.lume.data.PresetRepository
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
@@ -490,12 +491,21 @@ class EditorViewModel(
     private fun persistDraft() {
         val uri = _uiState.value.photoUri ?: return
         val recipe = history.current
+        val bitmap = previewBitmap
         viewModelScope.launch {
             try {
                 draftRepository.saveDraft(uri.toString(), recipe)
             } catch (e: Exception) {
                 // Rascunho é conveniência: falhar aqui nunca pode quebrar
                 // a edição. A exportação não depende do rascunho.
+            }
+            // A miniatura em arquivo é o que faz o cartão do rascunho
+            // mostrar a foto sempre: a permissão do seletor expira e
+            // a URI deixa de abrir horas depois.
+            if (bitmap != null) {
+                withContext(Dispatchers.IO) {
+                    DraftThumbnails.save(appContext, uri.toString(), bitmap)
+                }
             }
         }
     }
