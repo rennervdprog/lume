@@ -917,10 +917,11 @@ internal fun FilterPanel(
     onLutIntensityFinished: () -> Unit = {},
     onImportLutClick: () -> Unit = {},
     onDeleteLut: (String) -> Unit = {},
+    initialTab: FilterTab = FilterTab.All,
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
-    var selectedTab by remember(presets) { mutableStateOf<FilterTab>(FilterTab.All) }
+    var selectedTab by remember(presets) { mutableStateOf(initialTab) }
     val collections = remember(presets) {
         presets.map { it.collection }.distinct()
     }

@@ -18,13 +18,13 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até a Home v4 (run 26, commit `653429b`, 0.11.0, APK
-entregue). LUTs (0.12.0) escritos localmente, aguardando envio:**
-6 LUTs próprios no Filtro (aba LUTs), importar .cube (aba Meus
-LUTs, conversão na hora, salvo no aparelho), intensidade 0–100%,
-filtro próprio de LUT na cadeia da GPU (o LookupFilter da biblioteca
-não troca de bitmap), grade HALD 64 com amostragem em CPU para as
-miniaturas. Veredito do HSL no aparelho pendente. O Gradle não roda nesta VM (daemon
+verde até os LUTs (run 28, commit `ba9f0a7`, 0.12.0, 23/23 testes de
+UI, APK entregue). Home v5 (0.13.0) escrita localmente, aguardando envio:**
+atalhos de "Começar" (Abrir foto, Aplicar preset, Cortar, Ajustar,
+LUT — cada um abre o seletor já na ferramenta, o de LUT abre o Filtro
+na aba LUTs), cartão "Suas edições" quando não há rascunho e grade
+agrupada por data ("Hoje", "Ontem", data cheia). Veredito do HSL no
+aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`
 com emulador, igual ao Constância). Nada neste

@@ -18,7 +18,12 @@ object PendingEditorTarget {
     data class Target(
         val tool: EditorTool,
         val adjustSub: String? = null,
-        val presetId: String? = null
+        val presetId: String? = null,
+        /**
+         * Aba com que o painel Filtro deve abrir (só vale quando
+         * [tool] é FILTER). Nulo abre na aba Todos, o padrão.
+         */
+        val filterTab: FilterTab? = null
     )
 
     var target: Target? = null

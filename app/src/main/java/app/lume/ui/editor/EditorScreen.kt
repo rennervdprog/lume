@@ -112,6 +112,7 @@ fun EditorScreen(
     var hslChannel by remember { mutableIntStateOf(0) }
     var hslAttr by remember { mutableStateOf("hue") }
     var pendingPresetId by remember { mutableStateOf<String?>(null) }
+    var pendingFilterTab by remember { mutableStateOf<FilterTab?>(null) }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
         // Foto nova pelo seletor do Editor: o preset do banner não
@@ -158,6 +159,7 @@ fun EditorScreen(
             selectedTool = target.tool
             target.adjustSub?.let { adjustSub = it }
             target.presetId?.let { pendingPresetId = it }
+            pendingFilterTab = target.filterTab
             panelVisible = true
         }
     }
@@ -623,7 +625,8 @@ fun EditorScreen(
                             onLutIntensityChange = { viewModel.updateLutIntensity(it) },
                             onLutIntensityFinished = { viewModel.commitLutIntensity() },
                             onImportLutClick = { importLutLauncher.launch("*/*") },
-                            onDeleteLut = { viewModel.deleteUserLut(it) }
+                            onDeleteLut = { viewModel.deleteUserLut(it) },
+                            initialTab = pendingFilterTab ?: FilterTab.All
                         )
                         EditorTool.HISTORY -> HistoryPanel(
                             recipe = state.recipe,

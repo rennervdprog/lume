@@ -169,6 +169,7 @@ fun HomeScreen(
                         requestPhotoPermission = requestPhotoPermission,
                         onOpenEditor = onOpenEditor,
                         onPickPhoto = { pickWith(null) },
+                        onPickWithTarget = pickWith,
                         onOpenPaywall = onOpenPaywall
                     )
                 }

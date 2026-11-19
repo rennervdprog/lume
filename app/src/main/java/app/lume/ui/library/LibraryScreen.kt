@@ -91,6 +91,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -109,6 +110,10 @@ import app.lume.data.Draft
 import app.lume.data.DraftThumbnails
 import app.lume.data.photos.DevicePhoto
 import app.lume.data.photos.DevicePhotos
+import app.lume.data.photos.groupByDay
+import app.lume.ui.editor.EditorTool
+import app.lume.ui.editor.FilterTab
+import app.lume.ui.editor.PendingEditorTarget
 import app.lume.imaging.BitmapLoader
 import app.lume.ui.components.PresetSwatch
 import app.lume.ui.components.SectionTitle
@@ -192,12 +197,49 @@ private fun HomeTopBar(
 }
 
 /**
- * Aba Fotos: busca, "Continuar editando" e a grade de fotos do
- * aparelho — a tela inicial do app. A grade só existe com a
- * permissão de fotos; sem ela, a aba mostra a explicação, o
- * estado negado ou o aviso de acesso parcial, e o botão + abre
- * sempre o seletor do sistema (que não precisa de permissão).
+ * Aba Fotos: busca, "Continuar editando" (ou o cartão "Suas
+ * edições" quando não há rascunho), os atalhos de "Começar" e a
+ * grade de fotos do aparelho agrupada por data — a tela inicial
+ * do app. A grade só existe com a permissão de fotos; sem ela, a
+ * aba mostra a explicação, o estado negado ou o aviso de acesso
+ * parcial, e o botão + abre sempre o seletor do sistema (que não
+ * precisa de permissão).
  */
+
+/** Atalhos de "Começar" (Home v5): só o que o Lume já faz. */
+private val startActions = listOf(
+    StartAction("Abrir foto", null, null),
+    StartAction(
+        "Aplicar preset",
+        R.drawable.sample_portrait,
+        PendingEditorTarget.Target(EditorTool.FILTER)
+    ),
+    StartAction(
+        "Cortar",
+        R.drawable.sample_landscape,
+        PendingEditorTarget.Target(EditorTool.CROP)
+    ),
+    StartAction(
+        "Ajustar",
+        R.drawable.sample_street,
+        PendingEditorTarget.Target(EditorTool.ADJUST)
+    ),
+    StartAction(
+        "LUT",
+        R.drawable.sample_coffee,
+        PendingEditorTarget.Target(
+            EditorTool.FILTER,
+            filterTab = FilterTab.Luts
+        )
+    )
+)
+
+private data class StartAction(
+    val label: String,
+    @DrawableRes val thumbRes: Int?,
+    val target: PendingEditorTarget.Target?
+)
+
 @Composable
 fun PhotosTab(
     state: LibraryUiState,
@@ -206,6 +248,7 @@ fun PhotosTab(
     requestPhotoPermission: () -> Unit,
     onOpenEditor: (Uri) -> Unit,
     onPickPhoto: () -> Unit,
+    onPickWithTarget: (PendingEditorTarget.Target?) -> Unit,
     onOpenPaywall: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -251,6 +294,15 @@ fun PhotosTab(
             photos
         } else {
             photos.filter { it.displayName.contains(query, ignoreCase = true) }
+        }
+    }
+    // Grade agrupada por dia, sem busca: com busca, a lista é plana
+    // (o grupo de um resultado só não ajuda ninguém).
+    val groups = remember(visiblePhotos, query) {
+        if (query.isBlank()) {
+            groupByDay(visiblePhotos) { it.dateAddedSeconds }
+        } else {
+            emptyList()
         }
     }
 
@@ -439,41 +491,162 @@ fun PhotosTab(
                                 }
                             }
                         }
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            SectionTitle(
-                                "Suas fotos",
-                                modifier = Modifier.padding(
-                                    start = LumeSpacing.md,
-                                    top = LumeSpacing.md
-                                )
-                            )
-                        }
-                        if (visiblePhotos.isEmpty()) {
+                        if (state.drafts.isEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
-                                Text(
-                                    text = if (query.isBlank()) {
-                                        "Nenhuma foto encontrada neste aparelho."
-                                    } else {
-                                        "Nenhuma foto com esse nome."
-                                    },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                Column(
+                                    modifier = Modifier.padding(top = LumeSpacing.sm)
+                                ) {
+                                    SectionTitle(
+                                        "Suas edições",
+                                        modifier = Modifier.padding(
+                                            horizontal = LumeSpacing.md
+                                        )
+                                    )
+                                    Card(
+                                        modifier = Modifier.padding(
+                                            start = LumeSpacing.md,
+                                            end = LumeSpacing.md,
+                                            top = LumeSpacing.xs
+                                        ),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme
+                                                .surfaceContainer
+                                        ),
+                                        border = BorderStroke(
+                                            1.dp,
+                                            MaterialTheme.colorScheme.surfaceContainerHighest
+                                        ),
+                                        shape = RoundedCornerShape(20.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(LumeSpacing.md),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "Nenhuma edição em andamento",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "Escolha uma foto e comece a editar. " +
+                                                    "Suas edições aparecem aqui para você " +
+                                                    "continuar depois.",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(top = LumeSpacing.xs)
+                                            )
+                                            Button(
+                                                onClick = onPickPhoto,
+                                                modifier = Modifier.padding(top = LumeSpacing.sm)
+                                            ) {
+                                                Text("Editar foto")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column(
+                                modifier = Modifier.padding(top = LumeSpacing.sm)
+                            ) {
+                                SectionTitle(
+                                    "Começar",
                                     modifier = Modifier.padding(
-                                        horizontal = LumeSpacing.md,
-                                        vertical = LumeSpacing.lg
+                                        horizontal = LumeSpacing.md
+                                    )
+                                )
+                                LazyRow(
+                                    contentPadding = PaddingValues(
+                                        horizontal = LumeSpacing.md
+                                    ),
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        LumeSpacing.sm
+                                    ),
+                                    modifier = Modifier
+                                        .padding(top = LumeSpacing.xs)
+                                        .testTag("start_row")
+                                ) {
+                                    items(
+                                        items = startActions,
+                                        key = { it.label }
+                                    ) { action ->
+                                        StartTile(
+                                            action = action,
+                                            onPickWithTarget = onPickWithTarget
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (query.isBlank()) {
+                            if (groups.isEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Text(
+                                        text = "Nenhuma foto encontrada neste aparelho.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(
+                                            horizontal = LumeSpacing.md,
+                                            vertical = LumeSpacing.lg
+                                        )
+                                    )
+                                }
+                            }
+                            for (group in groups) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    DateHeader(
+                                        label = group.label,
+                                        count = group.items.size
+                                    )
+                                }
+                                items(
+                                    items = group.items,
+                                    key = { it.id }
+                                ) { photo ->
+                                    DevicePhotoCell(
+                                        photo = photo,
+                                        edited = photo.uri.toString() in draftUris,
+                                        onClick = { onOpenEditor(photo.uri) }
+                                    )
+                                }
+                            }
+                        } else {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                SectionTitle(
+                                    "Suas fotos",
+                                    modifier = Modifier.padding(
+                                        start = LumeSpacing.md,
+                                        top = LumeSpacing.md
                                     )
                                 )
                             }
-                        }
-                        items(
-                            items = visiblePhotos,
-                            key = { it.id }
-                        ) { photo ->
-                            DevicePhotoCell(
-                                photo = photo,
-                                edited = photo.uri.toString() in draftUris,
-                                onClick = { onOpenEditor(photo.uri) }
-                            )
+                            if (visiblePhotos.isEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Text(
+                                        text = "Nenhuma foto com esse nome.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(
+                                            horizontal = LumeSpacing.md,
+                                            vertical = LumeSpacing.lg
+                                        )
+                                    )
+                                }
+                            }
+                            items(
+                                items = visiblePhotos,
+                                key = { it.id }
+                            ) { photo ->
+                                DevicePhotoCell(
+                                    photo = photo,
+                                    edited = photo.uri.toString() in draftUris,
+                                    onClick = { onOpenEditor(photo.uri) }
+                                )
+                            }
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Text(
@@ -505,6 +678,88 @@ fun PhotosTab(
                 contentDescription = "Nova edição"
             )
         }
+    }
+}
+
+/**
+ * Um atalho de "Começar": miniatura real + nome. O toque abre o
+ * seletor de fotos e o Editor já na ferramenta do atalho — ou no
+ * padrão, quando o atalho é só "Abrir foto" (alvo nulo).
+ */
+@Composable
+private fun StartTile(
+    action: StartAction,
+    onPickWithTarget: (PendingEditorTarget.Target?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(96.dp)
+            .clickable { onPickWithTarget(action.target) },
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(96.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center
+        ) {
+            if (action.thumbRes != null) {
+                Image(
+                    painter = painterResource(id = action.thumbRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.PhotoLibrary,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+        Text(
+            text = action.label,
+            style = MaterialTheme.typography.labelMedium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/** Cabeçalho de um dia da grade: data + quantidade de fotos. */
+@Composable
+private fun DateHeader(
+    label: String,
+    count: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(
+                start = LumeSpacing.md,
+                end = LumeSpacing.md,
+                top = LumeSpacing.md,
+                bottom = LumeSpacing.xs
+            ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = if (count == 1) "1 foto" else "$count fotos",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
