@@ -53,10 +53,12 @@ import jp.co.cyberagent.android.gpuimage.filter.GPUImageWhiteBalanceFilter
  * tem filtro de grão e o campo [Recipe.grain] fica preservado nos
  * dados para um filtro próprio futuro — sem slider falso na UI.
  *
- * O efeito artístico é o único filtro que TROCA de instância: o
- * grupo é reconstruído quando o efeito muda ([rebuildGroup]) e o
- * renderer recebe o grupo novo ([GPUImageRenderer.setFilter] — o
- * mesmo gesto da câmera ao vivo ao trocar de filtro). As texturas
+ * O efeito artístico é o único filtro que TROCA de instância, e o
+ * suavizar-pele (bilateral) é o único que ENTRA e SAI da cadeia
+ * (não tem estado "desligado" — ver [rebuildGroup]): o grupo é
+ * reconstruído quando o efeito muda ou o suavizar-pele liga/desliga,
+ * e o renderer recebe o grupo novo ([GPUImageRenderer.setFilter] —
+ * o mesmo gesto da câmera ao vivo ao trocar de filtro). As texturas
  * de LUT e mistura são reenviadas depois da reconstrução (os
  * rastreadores são zerados junto).
  *
@@ -90,6 +92,7 @@ internal class GpuImagePipeline {
     /** Uma instância por efeito artístico, criada sob demanda. */
     private val artisticFilters = mutableMapOf<String, GPUImageFilter>()
     private var currentArtisticId: String? = null
+    private var currentBilateralIncluded: Boolean = true
 
     private var group: GPUImageFilterGroup = buildGroup(null)
 
@@ -233,7 +236,10 @@ internal class GpuImagePipeline {
      * filtro re-inicializa no primeiro desenho, reaplicando os
      * valores guardados nos campos (padrão da própria biblioteca).
      */
-    private fun buildGroup(artistic: GPUImageFilter?): GPUImageFilterGroup {
+    private fun buildGroup(
+        artistic: GPUImageFilter?,
+        includeBilateral: Boolean = true
+    ): GPUImageFilterGroup {
         val filters = mutableListOf<GPUImageFilter>(
             exposureFilter,
             whiteBalanceFilter,
@@ -252,7 +258,9 @@ internal class GpuImagePipeline {
         if (artistic != null) {
             filters.add(artistic)
         }
-        filters.add(bilateralFilter)
+        if (includeBilateral) {
+            filters.add(bilateralFilter)
+        }
         filters.add(gaussianFilter)
         filters.add(sharpenFilter)
         filters.add(blendFilter)
@@ -262,12 +270,12 @@ internal class GpuImagePipeline {
     }
 
     /**
-     * Troca o efeito artístico: destrói o grupo, monta outro com a
-     * instância do efeito novo e entrega ao renderer. As texturas de
-     * LUT e mistura são zeradas aqui: o filtro próprio perdeu o
-     * `pendingBitmap` no onDestroy e precisa do reenvio.
+     * Troca o efeito artístico e/ou a presença do suavizar-pele:
+     * destrói o grupo, monta outro e entrega ao renderer. As
+     * texturas de LUT e mistura são zeradas aqui: o filtro próprio
+     * perdeu o `pendingBitmap` no onDestroy e precisa do reenvio.
      */
-    private fun rebuildGroup(artisticId: String?) {
+    private fun rebuildGroup(artisticId: String?, includeBilateral: Boolean = true) {
         val artistic = artisticId?.let { id ->
             val effect = ArtisticEffect.fromId(id) ?: return@let null
             artisticFilters.getOrPut(id) { createArtisticFilter(effect) }
@@ -277,11 +285,12 @@ internal class GpuImagePipeline {
         } catch (ignored: Exception) {
             // Melhor esforço: o contexto pode já estar morto.
         }
-        group = buildGroup(artistic)
+        group = buildGroup(artistic, includeBilateral)
         renderer?.setFilter(group)
         lastLutGrid = null
         lastBlendBitmap = null
         currentArtisticId = artisticId
+        currentBilateralIncluded = includeBilateral
     }
 
     /**
@@ -365,8 +374,14 @@ internal class GpuImagePipeline {
             } else {
                 null
             }
-        if (effectiveArtisticId != currentArtisticId) {
-            rebuildGroup(effectiveArtisticId)
+        // Suavizar pele (bilateral): o filtro NÃO tem estado
+        // "desligado" — mesmo no fator 8 (o "padrão") ele mistura
+        // bordas duras (o pixel a 1px da borda vira ~189 em vez de
+        // 255). Por isso ele SAI da cadeia quando o slider é 0, no
+        // mesmo gesto de reconstrução do efeito artístico.
+        val effectiveBilateral = recipe.smoothSkin > 0.001f
+        if (effectiveArtisticId != currentArtisticId || effectiveBilateral != currentBilateralIncluded) {
+            rebuildGroup(effectiveArtisticId, effectiveBilateral)
         }
         effectiveArtisticId?.let { id ->
             val filter = artisticFilters[id]
@@ -382,11 +397,12 @@ internal class GpuImagePipeline {
             }
         }
         // Suavizar pele (bilateral): o fator da biblioteca é
-        // INVERTIDO — maior fator = MENOS suavização (mais borda
-        // preservada). Slider 0 = fator 8 (padrão, sem efeito),
-        // 100 = fator 1 (suavização máxima). Em foto grande o raio
-        // fixo de ±4 texels é sutil; no preview o efeito é visível.
-        bilateralFilter.setDistanceNormalizationFactor(8f - recipe.smoothSkin / 100f * 7f)
+        // INVERTIDO — maior fator = MENOS suavização. Slider 0 =
+        // fator 8, 100 = fator 1 (máximo). O filtro só está na
+        // cadeia quando o slider é > 0 (ver acima).
+        if (effectiveBilateral) {
+            bilateralFilter.setDistanceNormalizationFactor(8f - recipe.smoothSkin / 100f * 7f)
+        }
         // Desfoque gaussiano: tamanho 0..4 (0 = identidade, o
         // kernel de 9 amostras lê o mesmo texel).
         gaussianFilter.setBlurSize(recipe.blur / 100f * 4f)

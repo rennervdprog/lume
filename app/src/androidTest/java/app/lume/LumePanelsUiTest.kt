@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -14,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
@@ -380,27 +382,15 @@ class LumePanelsUiTest {
         composeRule.onNodeWithText("Ponto branco").assertIsDisplayed()
         // Desfoque é Pro no plano grátis: o toque abre o paywall
         // em vez de selecionar.
-        var tries = 0
-        while (composeRule.onAllNodesWithTag("sub_blur")
-            .fetchSemanticsNodes().isEmpty() && tries < 4
-        ) {
-            composeRule.onNodeWithTag("sub_strip")
-                .performTouchInput { swipeLeft() }
-            composeRule.waitForIdle()
-            tries++
-        }
+        // Rolagem determinística até o item (o gesto de arrastar
+        // andava pouco por vez e nem sempre alcançava o fim da fila).
+        composeRule.onNodeWithTag("sub_strip")
+            .performScrollToNode(hasTestTag("sub_blur"))
         composeRule.onNodeWithTag("sub_blur").performClick()
         Assert.assertEquals(1, paywallRequests)
         // RGB é grátis: o toque seleciona de verdade, sem paywall.
-        tries = 0
-        while (composeRule.onAllNodesWithTag("sub_rgb")
-            .fetchSemanticsNodes().isEmpty() && tries < 4
-        ) {
-            composeRule.onNodeWithTag("sub_strip")
-                .performTouchInput { swipeRight() }
-            composeRule.waitForIdle()
-            tries++
-        }
+        composeRule.onNodeWithTag("sub_strip")
+            .performScrollToNode(hasTestTag("sub_rgb"))
         composeRule.onNodeWithTag("sub_rgb").performClick()
         Assert.assertEquals(1, paywallRequests)
         composeRule.onNodeWithText("Vermelho").assertIsDisplayed()

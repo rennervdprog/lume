@@ -117,8 +117,15 @@ fun buildCameraFilterGroup(recipe: Recipe, lutGrid: Bitmap?): GPUImageFilterGrou
         applyArtisticIntensity(artistic, effect, r.artisticIntensity, 0, 0)
         filters.add(artistic)
     }
-    val bilateral = GPUImageBilateralBlurFilter().apply {
-        setDistanceNormalizationFactor(8f - r.smoothSkin / 100f * 7f)
+    // Bilateral sem estado "desligado": fora da cadeia quando o
+    // slider é 0 (mesma regra do pipeline — fator 8 ainda mistura
+    // bordas duras).
+    val bilateral = if (r.smoothSkin > 0.001f) {
+        GPUImageBilateralBlurFilter().apply {
+            setDistanceNormalizationFactor(8f - r.smoothSkin / 100f * 7f)
+        }
+    } else {
+        null
     }
     val gaussian = GPUImageGaussianBlurFilter().apply {
         setBlurSize(r.blur / 100f * 4f)
@@ -142,7 +149,7 @@ fun buildCameraFilterGroup(recipe: Recipe, lutGrid: Bitmap?): GPUImageFilterGrou
             setVignetteEnd(1f - value / 100f * 0.25f)
         }
     }
-    filters.add(bilateral)
+    bilateral?.let { filters.add(it) }
     filters.add(gaussian)
     filters.add(sharpen)
     filters.add(haze)

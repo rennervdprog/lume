@@ -36,8 +36,14 @@ class LumeCameraUiTest {
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
 
-    private fun nodesWith(text: String) =
+    // Sem hierarquia ainda (Activity não subiu), o fetch lança —
+    // sem o try, o waitUntil morre na primeira avaliação em vez
+    // de esperar a Activity.
+    private fun nodesWith(text: String) = try {
         composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+    } catch (_: IllegalStateException) {
+        false
+    }
 
     @Test
     fun atalhoCameraAbreExplicacaoDaPermissao() {
