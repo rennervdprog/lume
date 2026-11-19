@@ -1,16 +1,23 @@
 package app.lume
 
 import android.Manifest
+import android.content.Context
+import android.util.Log
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
@@ -36,6 +43,19 @@ class LumeCameraUiTest {
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
 
+    // O estado da permissão de câmera ("já pedida") vive em
+    // SharedPreferences e SOBREVIVE entre classes de teste na
+    // mesma execução: se algum teste anterior pediu a permissão,
+    // a tela da câmera abre no estado negado em vez da explicação
+    // e este teste expira esperando o texto (runs #36–#38). Limpa
+    // antes de cada execução para o teste ser hermético.
+    @Before
+    fun limpaEstadoDaPermissaoDeCamera() {
+        InstrumentationRegistry.getInstrumentation().targetContext
+            .getSharedPreferences("lume_camera_permission", Context.MODE_PRIVATE)
+            .edit().clear().apply()
+    }
+
     // Sem hierarquia ainda (Activity não subiu), o fetch lança —
     // sem o try, o waitUntil morre na primeira avaliação em vez
     // de esperar a Activity.
@@ -58,8 +78,17 @@ class LumeCameraUiTest {
         // não navegava no emulador (run #37) e a tag acerta o
         // mesmo clickable do tile.
         composeRule.onNodeWithTag("start_camera").performClick()
-        composeRule.waitUntil(timeoutMillis = 10000) {
-            nodesWith("Fotografe dentro do Lume")
+        try {
+            composeRule.waitUntil(timeoutMillis = 10000) {
+                nodesWith("Fotografe dentro do Lume")
+            }
+        } catch (e: ComposeTimeoutException) {
+            // Diagnóstico: despeja a árvore de semântica no logcat
+            // (o artefato de relatórios guarda o logcat por teste) —
+            // mostra se o clique não navegou ou se a tela abriu em
+            // outro estado (negado/visor).
+            Log.d("LumeCameraUiTest", "Árvore na expiração:\n" + composeRule.onRoot().printToString())
+            throw e
         }
         composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()
         composeRule.onNodeWithText("Permitir acesso à câmera").assertIsDisplayed()

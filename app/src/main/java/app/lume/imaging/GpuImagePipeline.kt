@@ -55,12 +55,23 @@ import jp.co.cyberagent.android.gpuimage.filter.GPUImageWhiteBalanceFilter
  *
  * O efeito artístico é o único filtro que TROCA de instância, e o
  * suavizar-pele (bilateral) é o único que ENTRA e SAI da cadeia
- * (não tem estado "desligado"): os dois entram e saem da lista do
- * grupo no lugar certo, sem reconstruir nada (ver
- * [syncGroupComposition]). Reconstruir o grupo mataria os programas
- * de todos os filtros e o `onInitialized` de alguns zeraria os
- * valores da receita depois que os setters já foram enfileirados
- * (o Níveis voltava para identidade — run #37).
+ * (não tem estado "desligado" — ver [rebuildGroup]): o grupo é
+ * reconstruído quando o efeito muda ou o suavizar-pele liga/desliga,
+ * e o renderer recebe o grupo novo ([GPUImageRenderer.setFilter] —
+ * o mesmo gesto da câmera ao vivo ao trocar de filtro). As texturas
+ * de LUT e mistura são reenviadas depois da reconstrução (os
+ * rastreadores são zerados junto).
+ *
+ * A reconstrução tem um preço: no primeiro desenho do grupo novo,
+ * cada filtro re-inicializa — e o `onInitialized` de alguns zera
+ * os valores (o [GPUImageLevelsFilter] volta para min 0 / meio 1 /
+ * máx 1) DEPOIS que os setters da receita já foram enfileirados,
+ * então o reset vence na fila; e um filtro novo (efeito artístico)
+ * desenha a primeira vez com o programa ainda em 0, então o seu
+ * uniform se perde (0x502) e ele não desenha nada. Por isso
+ * [render] descarta o primeiro desenho e reaplica a receita
+ * quando a composição muda: na segunda vez os filtros já estão
+ * inicializados e os setters são os últimos da fila.
  *
  * Limite honesto: fotos maiores que o limite de textura da GPU
  * ([GLES20.GL_MAX_TEXTURE_SIZE]) estouram em [setSource] — o chamador
@@ -94,7 +105,7 @@ internal class GpuImagePipeline {
     private var currentArtisticId: String? = null
     private var currentBilateralIncluded: Boolean = true
 
-    private var group: GPUImageFilterGroup = buildGroup()
+    private var group: GPUImageFilterGroup = buildGroup(null)
 
     private var buffer: PixelBuffer? = null
     private var renderer: GPUImageRenderer? = null
@@ -141,7 +152,19 @@ internal class GpuImagePipeline {
         blendBitmap: Bitmap? = null
     ): Bitmap {
         val active = buffer ?: throw IllegalStateException("setSource não chamado.")
-        applyRecipe(recipe.clamped(), lutGrid, blendBitmap)
+        val clamped = recipe.clamped()
+        val compositionChanged = applyRecipe(clamped, lutGrid, blendBitmap)
+        if (compositionChanged) {
+            // O grupo foi reconstruído: no primeiro desenho os
+            // filtros re-inicializam e os resets do onInitialized
+            // vencem os setters da receita na fila — e o filtro
+            // novo desenha com o programa ainda em 0, perdendo o
+            // uniform (0x502). Descarta esse desenho e reaplica a
+            // receita: na segunda vez os filtros já estão
+            // inicializados e os setters são os últimos da fila.
+            active.getBitmap()
+            applyRecipe(clamped, lutGrid, blendBitmap)
+        }
         return active.getBitmap()
             ?: throw IllegalStateException("PixelBuffer sem renderer (thread errada?).")
     }
@@ -230,10 +253,16 @@ internal class GpuImagePipeline {
     }
 
     /**
-     * Monta o grupo com a cadeia base + suavizar-pele. O efeito
-     * artístico entra depois, por [syncGroupComposition].
+     * Monta o grupo com a cadeia base + o efeito artístico pedido
+     * (null = sem efeito). Os filtros base são as MESMAS instâncias
+     * em todo grupo: ao reconstruir, o programa antigo morre e o
+     * filtro re-inicializa no primeiro desenho, reaplicando os
+     * valores guardados nos campos (padrão da própria biblioteca).
      */
-    private fun buildGroup(): GPUImageFilterGroup {
+    private fun buildGroup(
+        artistic: GPUImageFilter?,
+        includeBilateral: Boolean = true
+    ): GPUImageFilterGroup {
         val filters = mutableListOf<GPUImageFilter>(
             exposureFilter,
             whiteBalanceFilter,
@@ -247,70 +276,44 @@ internal class GpuImagePipeline {
             rgbFilter,
             hslFilter,
             toneCurveFilter,
-            lutFilter,
-            bilateralFilter,
-            gaussianFilter,
-            sharpenFilter,
-            blendFilter,
-            hazeFilter,
-            vignetteFilter
+            lutFilter
         )
+        if (artistic != null) {
+            filters.add(artistic)
+        }
+        if (includeBilateral) {
+            filters.add(bilateralFilter)
+        }
+        filters.add(gaussianFilter)
+        filters.add(sharpenFilter)
+        filters.add(blendFilter)
+        filters.add(hazeFilter)
+        filters.add(vignetteFilter)
         return GPUImageFilterGroup(filters)
     }
 
     /**
-     * Ajusta a composição do grupo SEM reconstruí-lo: o efeito
-     * artístico e o suavizar-pele entram e saem da lista do grupo
-     * no lugar certo (logo antes do desfoque), e o grupo recria só
-     * os framebuffers intermediários.
-     *
-     * Por que não reconstruir: destruir o grupo mata os programas
-     * de TODOS os filtros e o renderer re-inicializa cada um no
-     * desenho seguinte — e o `onInitialized` de alguns filtros da
-     * biblioteca zera os valores (o [GPUImageLevelsFilter] volta
-     * para min 0 / meio 1 / máx 1) DEPOIS que os setters da receita
-     * já foram enfileirados, então o reset vence na fila e a
-     * receita some (run #37: níveis 101 em vez de ≤ 8, desfoque
-     * sem efeito). Mexer na lista não re-inicializa nada: os
-     * valores dos filtros ficam como estavam e só o render atual
-     * os atualiza.
+     * Troca o efeito artístico e/ou a presença do suavizar-pele:
+     * destrói o grupo, monta outro e entrega ao renderer. As
+     * texturas de LUT e mistura são zeradas aqui: o filtro próprio
+     * perdeu o `pendingBitmap` no onDestroy e precisa do reenvio.
      */
-    private fun syncGroupComposition(artisticId: String?, includeBilateral: Boolean) {
-        val filters = group.filters
-        var changed = false
-        // Efeito artístico: sai o antigo (se houver) e entra o novo
-        // (se houver), sempre logo antes do desfoque.
-        val currentArtistic = currentArtisticId?.let { artisticFilters[it] }
-        if (currentArtisticId != artisticId) {
-            if (currentArtistic != null) {
-                filters.remove(currentArtistic)
-            }
-            val artistic = artisticId?.let { id ->
-                val effect = ArtisticEffect.fromId(id) ?: return@let null
-                artisticFilters.getOrPut(id) { createArtisticFilter(effect) }
-            }
-            if (artistic != null) {
-                filters.add(filters.indexOf(gaussianFilter), artistic)
-            }
-            currentArtisticId = artisticId
-            changed = true
+    private fun rebuildGroup(artisticId: String?, includeBilateral: Boolean = true) {
+        val artistic = artisticId?.let { id ->
+            val effect = ArtisticEffect.fromId(id) ?: return@let null
+            artisticFilters.getOrPut(id) { createArtisticFilter(effect) }
         }
-        // Suavizar pele: entra e sai logo antes do desfoque (depois
-        // do efeito artístico, quando ele existe).
-        val bilateralPresent = filters.contains(bilateralFilter)
-        if (bilateralPresent != includeBilateral) {
-            if (includeBilateral) {
-                filters.add(filters.indexOf(gaussianFilter), bilateralFilter)
-            } else {
-                filters.remove(bilateralFilter)
-            }
-            currentBilateralIncluded = includeBilateral
-            changed = true
+        try {
+            group.destroy()
+        } catch (ignored: Exception) {
+            // Melhor esforço: o contexto pode já estar morto.
         }
-        if (changed) {
-            group.updateMergedFilters()
-            group.onOutputSizeChanged(bufferWidth, bufferHeight)
-        }
+        group = buildGroup(artistic, includeBilateral)
+        renderer?.setFilter(group)
+        lastLutGrid = null
+        lastBlendBitmap = null
+        currentArtisticId = artisticId
+        currentBilateralIncluded = includeBilateral
     }
 
     /**
@@ -318,8 +321,10 @@ internal class GpuImagePipeline {
      * (runOnDraw) que roda no próximo desenho — por isso isto pode ser
      * chamado de qualquer thread, mas na prática roda na thread GL.
      * As faixas de cada filtro foram lidas no fonte da GPUImage 2.1.0.
+     * Devolve true quando a composição do grupo mudou (o chamador
+     * precisa descartar o primeiro desenho e reaplicar — ver [render]).
      */
-    private fun applyRecipe(recipe: Recipe, lutGrid: Bitmap?, blendBitmap: Bitmap?) {
+    private fun applyRecipe(recipe: Recipe, lutGrid: Bitmap?, blendBitmap: Bitmap?): Boolean {
         // Exposição: o shader multiplica por 2^exposure — a receita já
         // está em EV (-2..2), sem conversão.
         exposureFilter.setExposure(recipe.exposure)
@@ -397,11 +402,14 @@ internal class GpuImagePipeline {
         // Suavizar pele (bilateral): o filtro NÃO tem estado
         // "desligado" — mesmo no fator 8 (o "padrão") ele mistura
         // bordas duras (o pixel a 1px da borda vira ~189 em vez de
-        // 255). Por isso ele SAI da cadeia quando o slider é 0 (e
-        // o efeito artístico entra e sai do mesmo jeito, sem
-        // reconstruir o grupo — ver [syncGroupComposition]).
+        // 255). Por isso ele SAI da cadeia quando o slider é 0, no
+        // mesmo gesto de reconstrução do efeito artístico.
         val effectiveBilateral = recipe.smoothSkin > 0.001f
-        syncGroupComposition(effectiveArtisticId, effectiveBilateral)
+        val compositionChanged =
+            effectiveArtisticId != currentArtisticId || effectiveBilateral != currentBilateralIncluded
+        if (compositionChanged) {
+            rebuildGroup(effectiveArtisticId, effectiveBilateral)
+        }
         effectiveArtisticId?.let { id ->
             val filter = artisticFilters[id]
             val effect = ArtisticEffect.fromId(id)
@@ -458,5 +466,6 @@ internal class GpuImagePipeline {
             vignetteFilter.setVignetteStart(0.75f - vignette / 100f * 0.45f)
             vignetteFilter.setVignetteEnd(1f - vignette / 100f * 0.25f)
         }
+        return compositionChanged
     }
 }
