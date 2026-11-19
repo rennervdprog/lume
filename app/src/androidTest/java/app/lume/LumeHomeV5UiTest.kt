@@ -2,12 +2,12 @@ package app.lume
 
 import android.Manifest
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.swipeLeft
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import org.junit.Rule
@@ -51,15 +51,19 @@ class LumeHomeV5UiTest {
         }
         composeRule.onNodeWithText("Começar").assertIsDisplayed()
         composeRule.onNodeWithText("Abrir foto").assertIsDisplayed()
+        // A fileira rola na horizontal e a largura visível muda por
+        // aparelho: só o 1º atalho tem a visibilidade garantida. Os
+        // demais são trazidos para a tela com a rolagem da própria
+        // fileira antes de afirmar que aparecem (a run 33 caiu
+        // aqui: o 4º atalho nascia fora da tela do emulador).
+        val startRow = composeRule.onNodeWithTag("start_row")
+        startRow.performScrollToNode(hasText("Aplicar preset"))
         composeRule.onNodeWithText("Aplicar preset").assertIsDisplayed()
+        startRow.performScrollToNode(hasText("Cortar"))
         composeRule.onNodeWithText("Cortar").assertIsDisplayed()
+        startRow.performScrollToNode(hasText("Ajustar"))
         composeRule.onNodeWithText("Ajustar").assertIsDisplayed()
-        // O 5º atalho nasce fora da tela: rola a fileira até ele.
-        composeRule.onNodeWithTag("start_row")
-            .performTouchInput { swipeLeft() }
-        composeRule.waitUntil(timeoutMillis = 8000) {
-            nodesWith("LUT")
-        }
+        startRow.performScrollToNode(hasText("LUT"))
         composeRule.onNodeWithText("LUT").assertIsDisplayed()
         // Sem rascunhos: o cartão de estado vazio no lugar da tira.
         composeRule.onNodeWithText("Suas edições").assertIsDisplayed()
