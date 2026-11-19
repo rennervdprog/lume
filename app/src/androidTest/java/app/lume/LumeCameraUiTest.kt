@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -13,7 +14,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.test.swipeLeft
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -72,6 +75,22 @@ class LumeCameraUiTest {
         }
         val startRow = composeRule.onNodeWithTag("start_row")
         startRow.performScrollToNode(hasTestTag("start_camera"))
+        // A rolagem mínima deixa o atalho (último da fileira) só
+        // parcialmente visível na borda: o clique no centro do nó
+        // cai no atalho vizinho e abre o seletor de fotos — a
+        // Activity pausa atrás dele e a explicação nunca aparece
+        // (runs #36–#39; o logcat mostra PAUSED/STOPPED e o
+        // DocumentsUI abrindo). Desliza até o atalho caber inteiro
+        // na tela antes de clicar.
+        val displayWidth =
+            composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
+        for (i in 0 until 10) {
+            val bounds = composeRule.onNodeWithTag("start_camera")
+                .fetchSemanticsNode().boundsInRoot
+            if (bounds.left >= 0f && bounds.right <= displayWidth) break
+            startRow.performTouchInput { swipeLeft() }
+            composeRule.waitForIdle()
+        }
         composeRule.onNodeWithTag("start_camera").assertIsDisplayed()
         composeRule.onNodeWithText("Câmera").assertIsDisplayed()
         // Clica no tile (a tag), não no texto: o clique no rótulo
@@ -86,8 +105,14 @@ class LumeCameraUiTest {
             // Diagnóstico: despeja a árvore de semântica no logcat
             // (o artefato de relatórios guarda o logcat por teste) —
             // mostra se o clique não navegou ou se a tela abriu em
-            // outro estado (negado/visor).
-            Log.d("LumeCameraUiTest", "Árvore na expiração:\n" + composeRule.onRoot().printToString())
+            // outro estado (negado/visor). Sem hierarquia (activity
+            // parada atrás do seletor, por exemplo), o despejo
+            // lança também — não pode mascarar a expiração original.
+            try {
+                Log.d("LumeCameraUiTest", "Árvore na expiração:\n" + composeRule.onRoot().printToString())
+            } catch (_: Exception) {
+                Log.d("LumeCameraUiTest", "Sem hierarquia na expiração (activity parada?).")
+            }
             throw e
         }
         composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()

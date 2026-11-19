@@ -80,6 +80,28 @@ import jp.co.cyberagent.android.gpuimage.filter.GPUImageWhiteBalanceFilter
  */
 internal class GpuImagePipeline {
 
+    /**
+     * O desfoque da biblioteca é um grupo aninhado (dois passes):
+     * o grupo externo achata os grupos aninhados em
+     * `updateMergedFilters` e desenha só os filtros internos —
+     * o onDraw do gaussiano, que esvaziaria a fila do
+     * setBlurSize, nunca roda. Por isso o setBlurSize da
+     * biblioteca nunca muda o desfoque depois da inicialização:
+     * o valor que vale é o do campo no último init direto, e o
+     * teste de desfoque saía 255 (runs #37/#39). Esta subclasse
+     * atualiza os deslocamentos de texel na hora, na thread GL
+     * (os programas internos já existem quando o setter roda:
+     * no init, depois do onInit; no gesto, depois do primeiro
+     * desenho). O runnable enfileirado pelo super é redundante
+     * e inofensivo — a fila do gaussiano nunca é drenada.
+     */
+    private class LumeGaussianBlurFilter : GPUImageGaussianBlurFilter() {
+        override fun setBlurSize(blurSize: Float) {
+            super.setBlurSize(blurSize)
+            initTexelOffsets()
+        }
+    }
+
     private val exposureFilter = GPUImageExposureFilter()
     private val whiteBalanceFilter = GPUImageWhiteBalanceFilter()
     private val contrastFilter = GPUImageContrastFilter()
@@ -94,7 +116,7 @@ internal class GpuImagePipeline {
     private val toneCurveFilter = GPUImageToneCurveFilter()
     private val lutFilter = LutFilter()
     private val bilateralFilter = GPUImageBilateralBlurFilter()
-    private val gaussianFilter = GPUImageGaussianBlurFilter()
+    private val gaussianFilter = LumeGaussianBlurFilter()
     private val sharpenFilter = GPUImageSharpenFilter()
     private val blendFilter = BlendFilter()
     private val hazeFilter = GPUImageHazeFilter()
