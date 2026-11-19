@@ -23,8 +23,8 @@ data class DayGroup<T>(
  */
 fun <T> groupByDay(
     items: List<T>,
-    dateAddedSeconds: (T) -> Long,
-    nowMillis: Long = System.currentTimeMillis()
+    nowMillis: Long = System.currentTimeMillis(),
+    dateAddedSeconds: (T) -> Long
 ): List<DayGroup<T>> {
     if (items.isEmpty()) return emptyList()
     val locale = Locale("pt", "BR")

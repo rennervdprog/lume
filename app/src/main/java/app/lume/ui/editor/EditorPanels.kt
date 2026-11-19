@@ -888,7 +888,7 @@ internal fun HistoryPanel(
 }
 
 /** Abas do painel Filtro: presets (Todos + coleções) e LUTs. */
-internal sealed interface FilterTab {
+sealed interface FilterTab {
     data object All : FilterTab
     data object Luts : FilterTab
     data object MyLuts : FilterTab
