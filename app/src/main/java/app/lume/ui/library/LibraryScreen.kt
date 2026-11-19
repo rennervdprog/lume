@@ -703,6 +703,9 @@ private fun StartTile(
     Column(
         modifier = modifier
             .width(96.dp)
+            .then(
+                if (action.isCamera) Modifier.testTag("start_camera") else Modifier
+            )
             .clickable {
                 if (action.isCamera) {
                     onCameraClick()

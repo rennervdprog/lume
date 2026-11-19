@@ -2,7 +2,7 @@ package app.lume
 
 import android.Manifest
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -51,10 +51,14 @@ class LumeCameraUiTest {
             nodesWith("Começar")
         }
         val startRow = composeRule.onNodeWithTag("start_row")
-        startRow.performScrollToNode(hasText("Câmera"))
+        startRow.performScrollToNode(hasTestTag("start_camera"))
+        composeRule.onNodeWithTag("start_camera").assertIsDisplayed()
         composeRule.onNodeWithText("Câmera").assertIsDisplayed()
-        composeRule.onNodeWithText("Câmera").performClick()
-        composeRule.waitUntil(timeoutMillis = 8000) {
+        // Clica no tile (a tag), não no texto: o clique no rótulo
+        // não navegava no emulador (run #37) e a tag acerta o
+        // mesmo clickable do tile.
+        composeRule.onNodeWithTag("start_camera").performClick()
+        composeRule.waitUntil(timeoutMillis = 10000) {
             nodesWith("Fotografe dentro do Lume")
         }
         composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()
