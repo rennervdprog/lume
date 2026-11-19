@@ -83,4 +83,35 @@ class ProPolicyTest {
         assertTrue(labels.contains("Exportação"))
         assertTrue(labels.contains("Seus presets"))
     }
+
+    @Test
+    fun ajustarPro_blurSkin_artistic_blend_requirePro() {
+        for (feature in listOf(
+            Feature.ADJUST_PRO,
+            Feature.BLUR_SKIN,
+            Feature.ARTISTIC_EFFECTS,
+            Feature.BLEND_MODES
+        )) {
+            assertFalse("$feature é grátis", ProPolicy.isUnlocked(feature, isPro = false))
+            assertTrue("$feature libera com Pro", ProPolicy.isUnlocked(feature, isPro = true))
+        }
+    }
+
+    @Test
+    fun curvasBasicas_rgbIsFree() {
+        // A tabela aprovada (19/11) diz "Master + RGB" no Grátis:
+        // o RGB é CURVES_BASIC, não Pro. Só "Curvas salvas" é Pro.
+        assertTrue(ProPolicy.isUnlocked(Feature.CURVES_BASIC, isPro = false))
+        assertFalse(ProPolicy.isUnlocked(Feature.CURVES_LIBRARY, isPro = false))
+        assertTrue(ProPolicy.isUnlocked(Feature.CURVES_LIBRARY, isPro = true))
+    }
+
+    @Test
+    fun paywallRows_coverNovosRecursos014() {
+        val labels = ProPolicy.paywallRows.map { it.label }
+        assertTrue(labels.contains("Ajustar Pro"))
+        assertTrue(labels.contains("Desfoque e pele"))
+        assertTrue(labels.contains("Efeitos artísticos"))
+        assertTrue(labels.contains("Mistura"))
+    }
 }

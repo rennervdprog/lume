@@ -131,6 +131,15 @@ fun EditorScreen(
         }
     }
 
+    // Segunda foto da Mistura: só imagem; a decodificação é do ViewModel.
+    val blendPhotoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.pickBlendPhoto(uri)
+        }
+    }
+
     // Nome do LUT atual para o passo do Histórico.
     val lutDisplayName = state.recipe.lutId?.let { id ->
         BuiltInLuts.displayName(id)
@@ -626,7 +635,26 @@ fun EditorScreen(
                             onLutIntensityFinished = { viewModel.commitLutIntensity() },
                             onImportLutClick = { importLutLauncher.launch("*/*") },
                             onDeleteLut = { viewModel.deleteUserLut(it) },
+                            isPro = state.isPro,
+                            selectedArtisticId = state.recipe.artisticEffect,
+                            artisticIntensity = state.recipe.artisticIntensity,
+                            onApplyArtistic = { viewModel.applyArtistic(it) },
+                            onArtisticIntensityChange = { viewModel.updateArtisticIntensity(it) },
+                            onArtisticIntensityFinished = { viewModel.commitArtisticIntensity() },
+                            onRequestPaywall = { viewModel.requestPaywall() },
                             initialTab = pendingFilterTab ?: FilterTab.All
+                        )
+                        EditorTool.BLEND -> BlendPanel(
+                            recipe = state.recipe,
+                            isPro = state.isPro,
+                            hasBlendPhoto = state.hasBlendPhoto,
+                            onPickBlendPhoto = { blendPhotoLauncher.launch("image/*") },
+                            onClearBlendPhoto = { viewModel.clearBlendPhoto() },
+                            onApplyBlendMode = { viewModel.applyBlendMode(it) },
+                            onBlendOpacityChange = { viewModel.updateBlendOpacity(it) },
+                            onBlendOpacityFinished = { viewModel.commitBlendOpacity() },
+                            onRequestPaywall = { viewModel.requestPaywall() },
+                            onCompareChange = { showOriginal = it }
                         )
                         EditorTool.HISTORY -> HistoryPanel(
                             recipe = state.recipe,

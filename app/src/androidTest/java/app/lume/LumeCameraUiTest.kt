@@ -1,0 +1,59 @@
+package app.lume
+
+import android.Manifest
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.rule.GrantPermissionRule
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.RuleChain
+import org.junit.runner.RunWith
+
+/**
+ * Testes do atalho Câmera (0.14.0): o atalho existe na fileira
+ * "Começar" e abre a tela de explicação da permissão de câmera
+ * (a permissão NÃO é concedida aqui de propósito — o teste prova
+ * o caminho do pedido, não o visor, que precisa de câmera real).
+ *
+ * A permissão de fotos É concedida pela regra (mesmo motivo da
+ * Home v5: a grade precisa dela para mostrar o "Começar").
+ */
+@RunWith(AndroidJUnit4::class)
+class LumeCameraUiTest {
+
+    private val permissionRule: GrantPermissionRule =
+        GrantPermissionRule.grant(Manifest.permission.READ_EXTERNAL_STORAGE)
+
+    private val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val chain: RuleChain = RuleChain.outerRule(permissionRule).around(composeRule)
+
+    private fun nodesWith(text: String) =
+        composeRule.onAllNodesWithText(text).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun atalhoCameraAbreExplicacaoDaPermissao() {
+        composeRule.waitUntil(timeoutMillis = 8000) {
+            nodesWith("Começar")
+        }
+        val startRow = composeRule.onNodeWithTag("start_row")
+        startRow.performScrollToNode(hasText("Câmera"))
+        composeRule.onNodeWithText("Câmera").assertIsDisplayed()
+        composeRule.onNodeWithText("Câmera").performClick()
+        composeRule.waitUntil(timeoutMillis = 8000) {
+            nodesWith("Fotografe dentro do Lume")
+        }
+        composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()
+        composeRule.onNodeWithText("Permitir acesso à câmera").assertIsDisplayed()
+        composeRule.onNodeWithText("Agora não").assertIsDisplayed()
+        uitestShot("21_camera_permissao")
+    }
+}

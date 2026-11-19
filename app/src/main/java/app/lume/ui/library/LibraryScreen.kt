@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Collections
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -231,13 +232,16 @@ private val startActions = listOf(
             EditorTool.FILTER,
             filterTab = FilterTab.Luts
         )
-    )
+    ),
+    StartAction("Câmera", null, null, isCamera = true)
 )
 
 private data class StartAction(
     val label: String,
     @DrawableRes val thumbRes: Int?,
-    val target: PendingEditorTarget.Target?
+    val target: PendingEditorTarget.Target?,
+    /** Atalho da câmera: não abre o seletor, abre a câmera do app. */
+    val isCamera: Boolean = false
 )
 
 @Composable
@@ -250,6 +254,7 @@ fun PhotosTab(
     onPickPhoto: () -> Unit,
     onPickWithTarget: (PendingEditorTarget.Target?) -> Unit,
     onOpenPaywall: () -> Unit,
+    onOpenCamera: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -576,7 +581,8 @@ fun PhotosTab(
                                     ) { action ->
                                         StartTile(
                                             action = action,
-                                            onPickWithTarget = onPickWithTarget
+                                            onPickWithTarget = onPickWithTarget,
+                                            onCameraClick = onOpenCamera
                                         )
                                     }
                                 }
@@ -684,18 +690,26 @@ fun PhotosTab(
 /**
  * Um atalho de "Começar": miniatura real + nome. O toque abre o
  * seletor de fotos e o Editor já na ferramenta do atalho — ou no
- * padrão, quando o atalho é só "Abrir foto" (alvo nulo).
+ * padrão, quando o atalho é só "Abrir foto" (alvo nulo). O atalho
+ * Câmera abre a câmera do app, não o seletor.
  */
 @Composable
 private fun StartTile(
     action: StartAction,
     onPickWithTarget: (PendingEditorTarget.Target?) -> Unit,
+    onCameraClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .width(96.dp)
-            .clickable { onPickWithTarget(action.target) },
+            .clickable {
+                if (action.isCamera) {
+                    onCameraClick()
+                } else {
+                    onPickWithTarget(action.target)
+                }
+            },
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
@@ -705,7 +719,14 @@ private fun StartTile(
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center
         ) {
-            if (action.thumbRes != null) {
+            if (action.isCamera) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoCamera,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(32.dp)
+                )
+            } else if (action.thumbRes != null) {
                 Image(
                     painter = painterResource(id = action.thumbRes),
                     contentDescription = null,

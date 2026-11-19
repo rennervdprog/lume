@@ -49,7 +49,15 @@ enum class Feature {
     CAMERA_MANUAL,
     SYNC_PRESETS,
     SYNC_EDITS,
-    SUPPORT_PRIORITY
+    SUPPORT_PRIORITY,
+    /** Ajustar Pro (0.14.0): níveis, balanço de cor, névoa, gama, giro de cor. */
+    ADJUST_PRO,
+    /** Desfoque gaussiano + suavizar pele (0.14.0). */
+    BLUR_SKIN,
+    /** Os 10 efeitos artísticos (0.14.0). */
+    ARTISTIC_EFFECTS,
+    /** Mistura / dupla exposição (0.14.0). */
+    BLEND_MODES
 }
 
 object ProPolicy {
@@ -132,6 +140,10 @@ object ProPolicy {
         PaywallRow("Luz e cor", "Total", "Total"),
         PaywallRow("Curvas", "Master + RGB", "Curvas salvas"),
         PaywallRow("HSL", "4 canais essenciais", "8 canais + toque na foto"),
+        PaywallRow("Ajustar Pro", "—", "Níveis, balanço, névoa, gama e giro de cor"),
+        PaywallRow("Desfoque e pele", "—", "Desfoque e suavizar pele"),
+        PaywallRow("Efeitos artísticos", "—", "10 efeitos"),
+        PaywallRow("Mistura", "—", "Dupla exposição"),
         PaywallRow("Efeitos e detalhe", "Total", "Total"),
         PaywallRow("Cortar e proporções", "Total", "Total"),
         PaywallRow("Geometria", "Básico", "Completa + correção de lente"),

@@ -29,6 +29,12 @@ import kotlin.math.pow
  *   ignorados. O LUT é uma tabela 3D — nenhuma matriz 4x5 o
  *   representa; as miniaturas de LUT usam a amostragem em CPU
  *   ([app.lume.imaging.LutGrid.sample]).
+ * - os campos v4 (níveis, balanço de cor, névoa, gama, giro de cor,
+ *   RGB, desfoque, suavizar pele, efeito artístico e mistura) também
+ *   são ignorados: nenhum deles cabe numa matriz linear. O RGB é o
+ *   único que caberia (ganhos por canal) — fica fora de propósito,
+ *   para a tira de presets não mostrar um look que a exportação não
+ *   reproduz quando o motor falha.
  * O shader é o caminho que aplica a receita inteira.
  */
 object RecipeColorMatrix {

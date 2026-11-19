@@ -18,12 +18,14 @@ dois documentos internos:
   paramétrica, roteiro por fases e diferenciais P0.
 
 Estado: **Fase 1 em construção, repositório `rennervdprog/lume`, CI
-verde até os LUTs (run 28, commit `ba9f0a7`, 0.12.0, 23/23 testes de
-UI, APK entregue). Home v5 (0.13.0) escrita localmente, aguardando envio:**
-atalhos de "Começar" (Abrir foto, Aplicar preset, Cortar, Ajustar,
-LUT — cada um abre o seletor já na ferramenta, o de LUT abre o Filtro
-na aba LUTs), cartão "Suas edições" quando não há rascunho e grade
-agrupada por data ("Hoje", "Ontem", data cheia). Veredito do HSL no
+verde até a Home v5 (run 34, commit `f74a999`, 0.13.0, 24/24 testes de
+UI, APK entregue). 0.14.0 escrita localmente, aguardando envio:**
+todo o motor GPUImage — Ajustar Pro (Níveis, Balanço de cor, RGB
+grátis, Névoa, Gama, Giro de cor, Desfoque, Suavizar pele, com selo
+★ nos itens Pro), aba Efeitos no Filtro (10 efeitos artísticos com
+miniaturas reais do motor), ferramenta Mistura (dupla exposição, 8
+modos, opacidade) e câmera dentro do app (visor ao vivo com preset,
+tira de presets, captura que abre no Editor). Veredito do HSL no
 aparelho pendente. O Gradle não roda nesta VM (daemon
 incompatível — ver AGENTS.md); a compilação real é o CI do repositório
 (workflow `ci.yml`: assembleDebug + testes unitários + job `ui-tests`

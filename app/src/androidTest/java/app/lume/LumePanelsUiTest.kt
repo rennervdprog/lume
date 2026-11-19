@@ -22,6 +22,7 @@ import app.lume.core.BuiltInPresets
 import app.lume.core.Geometry
 import app.lume.core.Recipe
 import app.lume.ui.editor.AdjustPanel
+import app.lume.ui.editor.BlendPanel
 import app.lume.ui.editor.CropPanel
 import app.lume.ui.editor.CropTab
 import app.lume.ui.editor.FilterPanel
@@ -167,7 +168,7 @@ class LumePanelsUiTest {
     }
 
     @Test
-    fun painelAjustar_hslMostraPontosAtributoECadeado() {
+    fun painelAjustar_hslMostraPontosAtributoESelo() {
         var hslAttr by mutableStateOf("hue")
         var paywallRequested = false
         composeRule.setContent {
@@ -346,6 +347,182 @@ class LumePanelsUiTest {
         Assert.assertEquals(0f, cleared.single().exposure, 0f)
         Assert.assertEquals(10f, cleared.single().contrast, 0f)
         uitestShot("16_historico")
+    }
+
+    @Test
+    fun painelAjustar_proMostraNiveisESeloAbrePaywall() {
+        var selectedSub by mutableStateOf("levels")
+        var paywallRequests = 0
+        composeRule.setContent {
+            LumeTheme {
+                AdjustPanel(
+                    recipe = Recipe(levelsBlack = 20f),
+                    histogram = emptyList(),
+                    isPro = false,
+                    simpleMode = false,
+                    onSimpleModeChange = {},
+                    selectedSub = selectedSub,
+                    onSubSelect = { selectedSub = it },
+                    hslChannel = 0,
+                    onHslChannelSelect = {},
+                    hslAttr = "hue",
+                    onHslAttrSelect = {},
+                    onDraft = {},
+                    onCommit = {},
+                    onRequestPaywall = { paywallRequests++ },
+                    onCompareChange = {}
+                )
+            }
+        }
+        // A seção Níveis: os três sliders com legenda.
+        composeRule.onNodeWithText("Ponto preto").assertIsDisplayed()
+        composeRule.onNodeWithText("Meio-tom").assertIsDisplayed()
+        composeRule.onNodeWithText("Ponto branco").assertIsDisplayed()
+        // Desfoque é Pro no plano grátis: o toque abre o paywall
+        // em vez de selecionar.
+        var tries = 0
+        while (composeRule.onAllNodesWithTag("sub_blur")
+            .fetchSemanticsNodes().isEmpty() && tries < 4
+        ) {
+            composeRule.onNodeWithTag("sub_strip")
+                .performTouchInput { swipeLeft() }
+            composeRule.waitForIdle()
+            tries++
+        }
+        composeRule.onNodeWithTag("sub_blur").performClick()
+        Assert.assertEquals(1, paywallRequests)
+        // RGB é grátis: o toque seleciona de verdade, sem paywall.
+        tries = 0
+        while (composeRule.onAllNodesWithTag("sub_rgb")
+            .fetchSemanticsNodes().isEmpty() && tries < 4
+        ) {
+            composeRule.onNodeWithTag("sub_strip")
+                .performTouchInput { swipeRight() }
+            composeRule.waitForIdle()
+            tries++
+        }
+        composeRule.onNodeWithTag("sub_rgb").performClick()
+        Assert.assertEquals(1, paywallRequests)
+        composeRule.onNodeWithText("Vermelho").assertIsDisplayed()
+        uitestShot("18_ajustar_pro_niveis")
+    }
+
+    @Test
+    fun painelFiltro_mostraAbaEfeitos() {
+        var selectedEffect: String? by mutableStateOf(null)
+        composeRule.setContent {
+            LumeTheme {
+                FilterPanel(
+                    presets = BuiltInPresets.all,
+                    preview = null,
+                    appliedPresetName = null,
+                    presetIntensity = 1f,
+                    onApplyPreset = {},
+                    onClearPreset = {},
+                    onIntensityChange = {},
+                    onIntensityFinished = {},
+                    onSavePresetClick = {},
+                    onSharePresetClick = {},
+                    onShuffleClick = {},
+                    onCompareChange = {},
+                    isPro = true,
+                    selectedArtisticId = selectedEffect,
+                    artisticIntensity = 0.8f,
+                    onApplyArtistic = { selectedEffect = it }
+                )
+            }
+        }
+        composeRule.onNodeWithText("Efeitos").assertIsDisplayed()
+        composeRule.onNodeWithText("Efeitos").performClick()
+        composeRule.onNodeWithText("Sem efeito").assertIsDisplayed()
+        composeRule.onNodeWithText("Toon").assertIsDisplayed()
+        // Aplicar um efeito mostra o slider de intensidade do efeito.
+        composeRule.onNodeWithText("Toon").performClick()
+        composeRule.onNodeWithText("Intensidade do efeito").assertIsDisplayed()
+        uitestShot("19_filtro_efeitos")
+    }
+
+    @Test
+    fun painelFiltro_efeitoTravadoAbrePaywall() {
+        var paywallRequested = false
+        composeRule.setContent {
+            LumeTheme {
+                FilterPanel(
+                    presets = BuiltInPresets.all,
+                    preview = null,
+                    appliedPresetName = null,
+                    presetIntensity = 1f,
+                    onApplyPreset = {},
+                    onClearPreset = {},
+                    onIntensityChange = {},
+                    onIntensityFinished = {},
+                    onSavePresetClick = {},
+                    onSharePresetClick = {},
+                    onShuffleClick = {},
+                    onCompareChange = {},
+                    isPro = false,
+                    selectedArtisticId = null,
+                    onApplyArtistic = {},
+                    onRequestPaywall = { paywallRequested = true }
+                )
+            }
+        }
+        composeRule.onNodeWithText("Efeitos").performClick()
+        composeRule.onNodeWithText("Toon").performClick()
+        Assert.assertTrue(paywallRequested)
+        // Nada foi aplicado: o slider de intensidade não aparece.
+        Assert.assertTrue(
+            composeRule.onAllNodesWithText("Intensidade do efeito")
+                .fetchSemanticsNodes().isEmpty()
+        )
+    }
+
+    @Test
+    fun painelMistura_mostraModosEOpacidade() {
+        composeRule.setContent {
+            LumeTheme {
+                BlendPanel(
+                    recipe = Recipe(blendMode = "multiply", blendOpacity = 0.8f),
+                    isPro = true,
+                    hasBlendPhoto = true,
+                    onPickBlendPhoto = {},
+                    onClearBlendPhoto = {},
+                    onApplyBlendMode = {},
+                    onBlendOpacityChange = {},
+                    onBlendOpacityFinished = {},
+                    onRequestPaywall = {},
+                    onCompareChange = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("Mistura").assertIsDisplayed()
+        composeRule.onNodeWithText("Trocar segunda foto").assertIsDisplayed()
+        composeRule.onNodeWithText("Multiplicar").assertIsDisplayed()
+        composeRule.onNodeWithText("Opacidade").assertIsDisplayed()
+        uitestShot("20_mistura")
+    }
+
+    @Test
+    fun painelMistura_travadoAbrePaywall() {
+        var paywallRequested = false
+        composeRule.setContent {
+            LumeTheme {
+                BlendPanel(
+                    recipe = Recipe(),
+                    isPro = false,
+                    hasBlendPhoto = false,
+                    onPickBlendPhoto = {},
+                    onClearBlendPhoto = {},
+                    onApplyBlendMode = {},
+                    onBlendOpacityChange = {},
+                    onBlendOpacityFinished = {},
+                    onRequestPaywall = { paywallRequested = true },
+                    onCompareChange = {}
+                )
+            }
+        }
+        composeRule.onNodeWithText("Escolher segunda foto").performClick()
+        Assert.assertTrue(paywallRequested)
     }
 
     @Test

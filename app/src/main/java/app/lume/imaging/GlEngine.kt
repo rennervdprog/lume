@@ -54,11 +54,14 @@ object GlEngine {
      * [lutGrid] é o bitmap 512×512 da grade do LUT da receita,
      * resolvido pelo chamador ([LutGrids]): o motor só sobe a
      * textura — nunca lê arquivo nem gera grade na thread GL.
+     * [blendBitmap] é a segunda foto da mistura, resolvida pelo
+     * chamador: o motor só sobe a textura.
      */
     suspend fun render(
         source: Bitmap,
         recipe: Recipe,
-        lutGrid: Bitmap? = null
+        lutGrid: Bitmap? = null,
+        blendBitmap: Bitmap? = null
     ): Bitmap? =
         withContext(glDispatcher) {
             try {
@@ -69,7 +72,7 @@ object GlEngine {
                     active.setSource(source)
                     currentSource = source
                 }
-                active.render(recipe, lutGrid)
+                active.render(recipe, lutGrid, blendBitmap)
             } catch (e: CancellationException) {
                 // Cancelamento de gesto (novo render entrou): nunca
                 // engolir — senão o render velho atualiza a tela.

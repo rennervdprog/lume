@@ -62,7 +62,9 @@ data class EditorUiState(
     val histogram: List<Float> = emptyList(),
     val isPro: Boolean = false,
     /** LUTs .cube importados pelo usuário (aba Meus LUTs). */
-    val userLuts: List<UserLut> = emptyList()
+    val userLuts: List<UserLut> = emptyList(),
+    /** A segunda foto da mistura foi escolhida (vive só na sessão). */
+    val hasBlendPhoto: Boolean = false
 )
 
 class EditorViewModel(
@@ -84,6 +86,15 @@ class EditorViewModel(
      * banco). A exportação aplica a geometria da sessão.
      */
     private var currentGeometry: Geometry = Geometry.IDENTITY
+
+    /**
+     * Segunda foto da mistura (dupla exposição). Vive só na sessão,
+     * como a geometria: o rascunho guarda o modo e a opacidade, mas
+     * não a foto. Decodificada uma vez, em tamanho de preview — a
+     * textura é amostrada por UV, então o tamanho não precisa casar
+     * com a foto base.
+     */
+    private var blendBitmap: Bitmap? = null
 
     /**
      * No modo de prévia do Cortar, o render aplica giro/espelho mas
@@ -257,6 +268,139 @@ class EditorViewModel(
         private const val MAX_CUBE_BYTES: Int = 8 * 1024 * 1024
     }
 
+    // ---- Efeitos artísticos ----
+
+    /** Aplica um efeito artístico (ou tira, com null). Toque discreto: entra no histórico. */
+    fun applyArtistic(effectId: String?) {
+        clearAppliedPresetTracking()
+        val current = history.current
+        val intensity = if (effectId != null && effectId == current.artisticEffect &&
+            current.artisticIntensity > 0f
+        ) {
+            current.artisticIntensity
+        } else {
+            1f
+        }
+        val updated = current.copy(
+            artisticEffect = effectId,
+            artisticIntensity = if (effectId == null) 1f else intensity
+        )
+        history.commit(updated)
+        persistDraft()
+        _uiState.update {
+            it.copy(
+                recipe = updated,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        refreshRender()
+    }
+
+    /** Arrasto do slider de intensidade do efeito: preview sem histórico. */
+    fun updateArtisticIntensity(intensity: Float) {
+        clearAppliedPresetTracking()
+        val blended = history.current.copy(artisticIntensity = intensity.coerceIn(0f, 1f))
+        history.preview(blended)
+        _uiState.update { it.copy(recipe = blended) }
+        refreshRender()
+    }
+
+    /** Fim do gesto de intensidade do efeito: confirma no histórico. */
+    fun commitArtisticIntensity() {
+        history.commit(history.current)
+        persistDraft()
+        _uiState.update {
+            it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
+        }
+        refreshRender()
+    }
+
+    // ---- Mistura (dupla exposição) ----
+
+    /** Aplica um modo de mistura (ou tira, com null). Toque discreto: entra no histórico. */
+    fun applyBlendMode(modeId: String?) {
+        clearAppliedPresetTracking()
+        val current = history.current
+        val opacity = if (modeId != null && modeId == current.blendMode &&
+            current.blendOpacity > 0f
+        ) {
+            current.blendOpacity
+        } else {
+            1f
+        }
+        val updated = current.copy(
+            blendMode = modeId,
+            blendOpacity = if (modeId == null) 0f else opacity
+        )
+        history.commit(updated)
+        persistDraft()
+        _uiState.update {
+            it.copy(
+                recipe = updated,
+                canUndo = history.canUndo,
+                canRedo = history.canRedo
+            )
+        }
+        refreshRender()
+    }
+
+    /** Arrasto do slider de opacidade da mistura: preview sem histórico. */
+    fun updateBlendOpacity(opacity: Float) {
+        clearAppliedPresetTracking()
+        val blended = history.current.copy(blendOpacity = opacity.coerceIn(0f, 1f))
+        history.preview(blended)
+        _uiState.update { it.copy(recipe = blended) }
+        refreshRender()
+    }
+
+    /** Fim do gesto de opacidade da mistura: confirma no histórico. */
+    fun commitBlendOpacity() {
+        history.commit(history.current)
+        persistDraft()
+        _uiState.update {
+            it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
+        }
+        refreshRender()
+    }
+
+    /**
+     * Escolhe a segunda foto da mistura: decodifica em tamanho de
+     * preview e, se nenhum modo estava aplicado, aplica Multiplicar
+     * na hora (igual ao LUT importado, que aplica ao importar).
+     */
+    fun pickBlendPhoto(uri: Uri) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val decoded = BitmapLoader.decodePreview(appContext, uri)
+            if (decoded == null) {
+                _uiState.update { it.copy(message = "Não foi possível abrir esta foto.") }
+                return@launch
+            }
+            blendBitmap?.recycle()
+            blendBitmap = decoded
+            _uiState.update { it.copy(hasBlendPhoto = true) }
+            if (history.current.blendMode == null) {
+                withContext(Dispatchers.Main) { applyBlendMode("multiply") }
+            } else {
+                refreshRender()
+            }
+        }
+    }
+
+    /** Tira a segunda foto — e o modo junto, para o Histórico não mentir. */
+    fun clearBlendPhoto() {
+        if (history.current.blendMode != null) {
+            applyBlendMode(null)
+        }
+        clearBlendBitmap()
+        _uiState.update { it.copy(hasBlendPhoto = false) }
+    }
+
+    private fun clearBlendBitmap() {
+        blendBitmap?.recycle()
+        blendBitmap = null
+    }
+
     fun openPhoto(uri: Uri) {
         val currentUri = _uiState.value.photoUri
         if (currentUri == uri && _uiState.value.preview != null) return
@@ -289,7 +433,8 @@ class EditorViewModel(
                 isLoadingPhoto = true,
                 exportedUri = null,
                 appliedPresetName = null,
-                presetIntensity = 1f
+                presetIntensity = 1f,
+                hasBlendPhoto = false
             )
         }
         viewModelScope.launch {
@@ -372,6 +517,7 @@ class EditorViewModel(
         history.commit(Recipe.IDENTITY)
         clearAppliedPresetTracking()
         currentGeometry = Geometry.IDENTITY
+        clearBlendBitmap()
         persistDraft()
         _uiState.update {
             it.copy(
@@ -380,7 +526,8 @@ class EditorViewModel(
                 canUndo = history.canUndo,
                 canRedo = history.canRedo,
                 appliedPresetName = null,
-                presetIntensity = 1f
+                presetIntensity = 1f,
+                hasBlendPhoto = false
             )
         }
         refreshRender()
@@ -586,7 +733,10 @@ class EditorViewModel(
         val geometry = currentGeometry
         viewModelScope.launch {
             val lutGrid = lutGridFor(recipe)
-            val result = PhotoExporter.exportJpeg(appContext, uri, recipe, geometry, lutGrid)
+            val blend = blendBitmapFor(recipe)
+            val result = PhotoExporter.exportJpeg(
+                appContext, uri, recipe, geometry, lutGrid, blend
+            )
             result.fold(
                 onSuccess = { savedUri ->
                     _uiState.update {
@@ -691,7 +841,9 @@ class EditorViewModel(
                 val base = if (recipe.isIdentity()) {
                     bitmap
                 } else {
-                    PhotoExporter.renderWithEngine(bitmap, recipe, lutGridFor(recipe))
+                    PhotoExporter.renderWithEngine(
+                        bitmap, recipe, lutGridFor(recipe), blendBitmapFor(recipe)
+                    )
                 }
                 val final = GeometryTransform.apply(base, effectiveGeometry)
                 if (final !== base && base !== bitmap) {
@@ -726,9 +878,22 @@ class EditorViewModel(
         return LutGrids.bitmapFor(appContext, recipe.lutId)
     }
 
+    /**
+     * A segunda foto da mistura, pronta para a GPU — ou null (sem
+     * modo, opacidade 0, ou sem foto escolhida). É a MESMA instância
+     * entre renders: o motor só reenvia a textura quando ela muda.
+     */
+    private fun blendBitmapFor(recipe: Recipe): Bitmap? {
+        if (recipe.blendMode == null || recipe.blendOpacity <= 0f) return null
+        val bitmap = blendBitmap ?: return null
+        if (bitmap.isRecycled) return null
+        return bitmap
+    }
+
     private fun recyclePreview() {
         previewBitmap?.recycle()
         previewBitmap = null
+        clearBlendBitmap()
         while (renderedRing.isNotEmpty()) {
             renderedRing.removeFirst().recycle()
         }

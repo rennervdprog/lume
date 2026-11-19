@@ -58,6 +58,7 @@ fun HomeScreen(
     accountViewModel: AccountViewModel,
     onOpenEditor: (Uri) -> Unit,
     onOpenPaywall: () -> Unit,
+    onOpenCamera: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by libraryViewModel.uiState.collectAsStateWithLifecycle()
@@ -170,7 +171,8 @@ fun HomeScreen(
                         onOpenEditor = onOpenEditor,
                         onPickPhoto = { pickWith(null) },
                         onPickWithTarget = pickWith,
-                        onOpenPaywall = onOpenPaywall
+                        onOpenPaywall = onOpenPaywall,
+                        onOpenCamera = onOpenCamera
                     )
                 }
                 HomeTab.PRESETS -> {

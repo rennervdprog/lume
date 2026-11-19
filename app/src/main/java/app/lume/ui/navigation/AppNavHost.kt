@@ -9,6 +9,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import app.lume.di.AppContainer
 import app.lume.ui.account.AccountViewModel
+import app.lume.ui.camera.CameraScreen
+import app.lume.ui.camera.CameraViewModel
 import app.lume.ui.editor.EditorScreen
 import app.lume.ui.editor.EditorViewModel
 import app.lume.ui.library.HomeScreen
@@ -20,6 +22,7 @@ object Routes {
     const val LIBRARY: String = "library"
     const val EDITOR: String = "editor"
     const val PAYWALL: String = "paywall"
+    const val CAMERA: String = "camera"
 }
 
 @Composable
@@ -48,7 +51,23 @@ fun AppNavHost(
                     editorViewModel.openPhoto(uri)
                     navController.navigate(Routes.EDITOR)
                 },
-                onOpenPaywall = { navController.navigate(Routes.PAYWALL) }
+                onOpenPaywall = { navController.navigate(Routes.PAYWALL) },
+                onOpenCamera = { navController.navigate(Routes.CAMERA) }
+            )
+        }
+        composable(Routes.CAMERA) {
+            val cameraViewModel: CameraViewModel = viewModel(
+                factory = container.cameraViewModelFactory()
+            )
+            CameraScreen(
+                viewModel = cameraViewModel,
+                onPhotoCaptured = { uri ->
+                    editorViewModel.openPhoto(uri)
+                    navController.navigate(Routes.EDITOR) {
+                        popUpTo(Routes.CAMERA) { inclusive = true }
+                    }
+                },
+                onBack = { navController.popBackStack() }
             )
         }
         composable(Routes.EDITOR) {

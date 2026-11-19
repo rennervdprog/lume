@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -289,21 +290,56 @@ internal fun SlimSliderRow(
 internal data class IconSubOption(
     val id: String,
     val label: String,
-    val icon: ImageVector
+    val icon: ImageVector,
+    /**
+     * Recurso Pro no plano grátis: o item fica visível com o selo ★
+     * e o toque abre o paywall ([onLockedSelect]) em vez de selecionar.
+     */
+    val sealed: Boolean = false
 )
+
+/**
+ * Selo Pro (preview do selo, 19/11): círculo azul de 18dp com uma
+ * estrela branca, anel branco de 2dp para ler sobre qualquer cor.
+ * Vai no canto superior direito do item trancado.
+ */
+@Composable
+internal fun ProSealBadge(
+    modifier: Modifier = Modifier,
+    contentDescription: String = "Pro"
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary)
+            .border(2.dp, Color.White, CircleShape)
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Star,
+            contentDescription = contentDescription,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(11.dp)
+        )
+    }
+}
 
 /**
  * Trilho de sub-ferramentas com ícones (v4): ícone + rótulo, a
  * selecionada ganha a cor primária e um ponto azul embaixo. A tira
  * rola até a selecionada sozinha (atalhos da Home que caem no fim
  * do trilho, como HSL e Curva). A tag da tira é "sub_strip" e a
- * de cada item é "sub_<id>".
+ * de cada item é "sub_<id>". Item com selo ([IconSubOption.sealed])
+ * mostra o selo ★ e o toque abre o paywall ([onLockedSelect]) em
+ * vez de selecionar — o recurso fica visível, nunca escondido.
  */
 @Composable
 internal fun IconSubRail(
     options: List<IconSubOption>,
     selectedId: String,
     onSelect: (String) -> Unit,
+    onLockedSelect: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -332,15 +368,28 @@ internal fun IconSubRail(
                     .testTag("sub_${option.id}")
                     .width(64.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable { onSelect(option.id) }
+                    .clickable {
+                        if (option.sealed && onLockedSelect != null) {
+                            onLockedSelect(option.id)
+                        } else {
+                            onSelect(option.id)
+                        }
+                    }
                     .padding(vertical = 6.dp)
             ) {
-                Icon(
-                    imageVector = option.icon,
-                    contentDescription = null,
-                    tint = tint,
-                    modifier = Modifier.size(24.dp)
-                )
+                Box(contentAlignment = Alignment.TopEnd) {
+                    Icon(
+                        imageVector = option.icon,
+                        contentDescription = null,
+                        tint = tint,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    if (option.sealed) {
+                        ProSealBadge(
+                            modifier = Modifier.offset(x = 6.dp, y = (-6).dp)
+                        )
+                    }
+                }
                 Text(
                     text = option.label,
                     style = MaterialTheme.typography.labelSmall.copy(

@@ -9,11 +9,11 @@ import org.junit.Test
 class RecipeLutTest {
 
     @Test
-    fun padraoSemLutEVersao3() {
+    fun padraoSemLutEVersao4() {
         val recipe = Recipe()
         assertNull(recipe.lutId)
         assertEquals(0f, recipe.lutIntensity, 0f)
-        assertEquals(3, Recipe.CURRENT_VERSION)
+        assertEquals(4, Recipe.CURRENT_VERSION)
         assertEquals(Recipe.CURRENT_VERSION, recipe.version)
         assertTrue(recipe.isIdentity())
     }

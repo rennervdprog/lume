@@ -16,6 +16,7 @@ import app.lume.data.local.appDataStore
 import app.lume.data.pro.EntitlementRepository
 import app.lume.data.pro.LocalEntitlementRepository
 import app.lume.ui.account.AccountViewModel
+import app.lume.ui.camera.CameraViewModel
 import app.lume.ui.editor.EditorViewModel
 import app.lume.ui.library.LibraryViewModel
 import app.lume.ui.paywall.PaywallViewModel
@@ -87,6 +88,14 @@ class AppContainer(private val context: Context) {
 
     fun paywallViewModelFactory(): ViewModelProvider.Factory = viewModelFactory {
         PaywallViewModel(entitlementRepository = entitlementRepository)
+    }
+
+    fun cameraViewModelFactory(): ViewModelProvider.Factory = viewModelFactory {
+        CameraViewModel(
+            appContext = context.applicationContext,
+            presetRepository = presetRepository,
+            entitlementRepository = entitlementRepository
+        )
     }
 
     // Fábrica genérica mínima sobre ViewModelProvider.Factory, sem

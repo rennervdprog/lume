@@ -5,17 +5,26 @@
          tela inicial, que lista as fotos do aparelho pela MediaStore.
          Sem ela, o app continua funcionando pelo seletor de fotos do
          sistema (Photo Picker), que não exige permissão nenhuma. A
-         exportação sai pela MediaStore. Sem rede, sem câmera: a
-         permissão de câmera só entra quando a câmera dentro do app
-         existir. READ_MEDIA_IMAGES vale do Android 13 em diante;
-         aparelhos mais antigos usam READ_EXTERNAL_STORAGE; o acesso
-         parcial ("só algumas fotos") é do Android 14 em diante. -->
+         exportação sai pela MediaStore. Sem rede. READ_MEDIA_IMAGES
+         vale do Android 13 em diante; aparelhos mais antigos usam
+         READ_EXTERNAL_STORAGE; o acesso parcial ("só algumas fotos")
+         é do Android 14 em diante. -->
 
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+
+    <!-- Permissão de câmera (0.14.0): só existe por causa da câmera
+         dentro do app, que fotografa com os presets ao vivo. Sem
+         ela, o atalho Câmera mostra a explicação e o estado negado,
+         e o resto do app continua funcionando. A câmera não é
+         obrigatória para instalar o app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <application
         android:name=".LumeApp"

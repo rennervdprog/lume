@@ -44,20 +44,23 @@ object PhotoExporter {
      * aplica a [geometry] e salva o JPEG na galeria (Pasta "Lume").
      * Retorna a Uri do arquivo. A geometria roda depois da cor, igual
      * ao preview — o que o usuário vê é o que sai no arquivo.
+     * [blendBitmap] é a segunda foto da mistura, decodificada pelo
+     * chamador (o motor não lê arquivo).
      */
     suspend fun exportJpeg(
         context: Context,
         photoUri: Uri,
         recipe: Recipe,
         geometry: Geometry = Geometry.IDENTITY,
-        lutGrid: Bitmap? = null
+        lutGrid: Bitmap? = null,
+        blendBitmap: Bitmap? = null
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val source = BitmapLoader.decodeFull(context, photoUri)
                 ?: return@withContext Result.failure(
                     IllegalStateException("Não foi possível abrir a foto original.")
                 )
-            val rendered = renderWithEngine(source, recipe, lutGrid)
+            val rendered = renderWithEngine(source, recipe, lutGrid, blendBitmap)
             if (rendered !== source) {
                 source.recycle()
             }
@@ -82,13 +85,16 @@ object PhotoExporter {
      * falha do motor, cai para [render] (matriz, CPU). Devolve um
      * bitmap novo (nunca o [source]). [lutGrid] é a grade do LUT da
      * receita; o fallback de matriz ignora o LUT, igual a HSL/curva.
+     * [blendBitmap] é a segunda foto da mistura; o fallback também a
+     * ignora (a mistura só existe no motor GL).
      */
     suspend fun renderWithEngine(
         source: Bitmap,
         recipe: Recipe,
-        lutGrid: Bitmap? = null
+        lutGrid: Bitmap? = null,
+        blendBitmap: Bitmap? = null
     ): Bitmap {
-        return GlEngine.render(source, recipe, lutGrid) ?: render(source, recipe)
+        return GlEngine.render(source, recipe, lutGrid, blendBitmap) ?: render(source, recipe)
     }
 
     /**
