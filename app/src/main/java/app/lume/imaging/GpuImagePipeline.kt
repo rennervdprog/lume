@@ -1,6 +1,7 @@
 package app.lume.imaging
 
 import android.graphics.Bitmap
+import android.graphics.PointF
 import android.opengl.GLES20
 import app.lume.core.Recipe
 import jp.co.cyberagent.android.gpuimage.GPUImageRenderer
