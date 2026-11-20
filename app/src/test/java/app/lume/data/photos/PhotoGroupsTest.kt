@@ -28,7 +28,10 @@ class PhotoGroupsTest {
 
     @Test
     fun fotoDeHojeRotuladaHoje() {
-        val groups = groupByDay(listOf(now / 1000)) { it }
+        // "Agora" fixo como nos outros testes: sem nowMillis, o
+        // teste comparava a foto fixa de 19/11 com o dia real e
+        // quebrava no dia seguinte (20/11: "Ontem", run #45).
+        val groups = groupByDay(listOf(now / 1000), nowMillis = now) { it }
         assertEquals(1, groups.size)
         assertEquals("Hoje, 19 de novembro", groups[0].label)
         assertEquals(1, groups[0].items.size)
