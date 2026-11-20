@@ -5,9 +5,9 @@ import android.content.Context
 import android.util.Log
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -85,8 +85,11 @@ class LumeCameraUiTest {
         val displayWidth =
             composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
         for (i in 0 until 10) {
-            val bounds = composeRule.onNodeWithTag("start_camera")
-                .fetchSemanticsNode().boundsInRoot
+            // fetchSemanticsNode (singular) não existe como função
+            // solta nesta versão do Compose — a coleção com
+            // fetchSemanticsNodes (plural) é a API que compila aqui.
+            val bounds = composeRule.onAllNodesWithTag("start_camera")
+                .fetchSemanticsNodes().first().boundsInRoot
             if (bounds.left >= 0f && bounds.right <= displayWidth) break
             startRow.performTouchInput { swipeLeft() }
             composeRule.waitForIdle()
