@@ -10,14 +10,14 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        // PROVISÓRIO: "Lume" e app.lume vieram do protótipo e não são
-        // decisão de marca. Decidir nome/applicationId finais ANTES de
-        // publicar na Play Store (applicationId não muda depois).
-        applicationId = "app.lume"
+        // Nome decidido 2026-11-20: Solarize, ícone "Sol invertido".
+        // applicationId não muda depois de publicar — por isso foi
+        // definido antes da primeira publicação.
+        applicationId = "app.solarize"
         minSdk = 24
         targetSdk = 36
-        versionCode = 17
-        versionName = "0.14.1"
+        versionCode = 18
+        versionName = "0.15.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
