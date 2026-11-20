@@ -13,7 +13,6 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
@@ -86,31 +85,39 @@ class LumeCameraUiTest {
         val displayWidth =
             composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
         // O botão + ("Nova edição") fica fixo no canto inferior
-        // direito POR CIMA da fileira: com o atalho Câmera no fim
-        // da fileira, o centro dele cai debaixo do + e o toque abre
-        // o seletor de fotos em vez da câmera (runs #36–#41; o
-        // print 06_comecar mostra o + cobrindo o atalho). Caber na
-        // tela não basta — desliza até o centro do atalho sair de
-        // debaixo do + antes de clicar.
+        // direito POR CIMA da fileira e cobre o centro do atalho
+        // Câmera (último da fileira): o toque no centro abre o
+        // seletor de fotos em vez da câmera (runs #36–#42; o print
+        // 06_comecar mostra o + cobrindo o atalho). Deslizar a
+        // fileira não resolve — ela já está no fim do curso e o
+        // atalho não anda mais para a esquerda (run #42: 10
+        // deslizes sem sair do lugar). O toque vai no TOPO do
+        // atalho, acima do +, que é área clicável do mesmo atalho.
         val fabBounds = composeRule.onAllNodesWithTag("fab_new_edit")
             .fetchSemanticsNodes().first().boundsInRoot
         for (i in 0 until 10) {
             val bounds = composeRule.onAllNodesWithTag("start_camera")
                 .fetchSemanticsNodes().first().boundsInRoot
-            val centerX = (bounds.left + bounds.right) / 2f
-            val centerY = (bounds.top + bounds.bottom) / 2f
-            val fitsOnScreen = bounds.left >= 0f && bounds.right <= displayWidth
-            val clearOfFab = !fabBounds.contains(Offset(centerX, centerY))
-            if (fitsOnScreen && clearOfFab) break
+            if (bounds.left >= 0f && bounds.right <= displayWidth) break
             startRow.performTouchInput { swipeLeft() }
             composeRule.waitForIdle()
         }
         composeRule.onNodeWithTag("start_camera").assertIsDisplayed()
         composeRule.onNodeWithText("Câmera").assertIsDisplayed()
-        // Clica no tile (a tag), não no texto: o clique no rótulo
-        // não navegava no emulador (run #37) e a tag acerta o
-        // mesmo clickable do tile.
-        composeRule.onNodeWithTag("start_camera").performClick()
+        val tileBounds = composeRule.onAllNodesWithTag("start_camera")
+            .fetchSemanticsNodes().first().boundsInRoot
+        val tapX = (tileBounds.left + tileBounds.right) / 2f
+        var tapY = tileBounds.top + tileBounds.height * 0.10f
+        if (fabBounds.contains(Offset(tapX, tapY))) {
+            tapY = fabBounds.top - 8f
+        }
+        // Toque por coordenada (o clique no centro do nó cai no +):
+        // down/up são os primitivos do escopo de toque, sem import
+        // novo — o ponto é relativo à raiz, mesma base do boundsInRoot.
+        composeRule.onRoot().performTouchInput {
+            down(0, Offset(tapX, tapY))
+            up(0)
+        }
         try {
             composeRule.waitUntil(timeoutMillis = 10000) {
                 nodesWith("Fotografe dentro do Lume")
