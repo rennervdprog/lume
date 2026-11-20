@@ -3,6 +3,7 @@ package app.lume
 import android.Manifest
 import android.content.Context
 import android.util.Log
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
@@ -84,13 +85,23 @@ class LumeCameraUiTest {
         // na tela antes de clicar.
         val displayWidth =
             composeRule.activity.resources.displayMetrics.widthPixels.toFloat()
+        // O botão + ("Nova edição") fica fixo no canto inferior
+        // direito POR CIMA da fileira: com o atalho Câmera no fim
+        // da fileira, o centro dele cai debaixo do + e o toque abre
+        // o seletor de fotos em vez da câmera (runs #36–#41; o
+        // print 06_comecar mostra o + cobrindo o atalho). Caber na
+        // tela não basta — desliza até o centro do atalho sair de
+        // debaixo do + antes de clicar.
+        val fabBounds = composeRule.onAllNodesWithTag("fab_new_edit")
+            .fetchSemanticsNodes().first().boundsInRoot
         for (i in 0 until 10) {
-            // fetchSemanticsNode (singular) não existe como função
-            // solta nesta versão do Compose — a coleção com
-            // fetchSemanticsNodes (plural) é a API que compila aqui.
             val bounds = composeRule.onAllNodesWithTag("start_camera")
                 .fetchSemanticsNodes().first().boundsInRoot
-            if (bounds.left >= 0f && bounds.right <= displayWidth) break
+            val centerX = (bounds.left + bounds.right) / 2f
+            val centerY = (bounds.top + bounds.bottom) / 2f
+            val fitsOnScreen = bounds.left >= 0f && bounds.right <= displayWidth
+            val clearOfFab = !fabBounds.contains(Offset(centerX, centerY))
+            if (fitsOnScreen && clearOfFab) break
             startRow.performTouchInput { swipeLeft() }
             composeRule.waitForIdle()
         }
