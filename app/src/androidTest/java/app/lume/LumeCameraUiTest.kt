@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.printToString
@@ -136,8 +137,16 @@ class LumeCameraUiTest {
             }
             throw e
         }
+        // A explicação é uma coluna rolável e o conteúdo é alto
+        // (foto 220dp + título + texto + 3 marcadores + botões):
+        // no emulador o botão "Permitir" fica ABAIXO da dobra —
+        // existe na árvore, mas assertIsDisplayed falha porque não
+        // está visível (run #43: o título passou, o botão não).
+        // Rola até cada botão antes de conferir.
         composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()
+        composeRule.onNodeWithText("Permitir acesso à câmera").performScrollTo()
         composeRule.onNodeWithText("Permitir acesso à câmera").assertIsDisplayed()
+        composeRule.onNodeWithText("Agora não").performScrollTo()
         composeRule.onNodeWithText("Agora não").assertIsDisplayed()
         uitestShot("21_camera_permissao")
     }
