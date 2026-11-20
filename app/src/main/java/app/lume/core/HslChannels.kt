@@ -21,12 +21,16 @@ data class HslChannel(
         luminance = luminance.coerceIn(-100f, 100f)
     )
 
+    /** Interpola para [other]. Parcial (0.15.2): só move o componente
+     * que o destino define (diferente de 0) — igual à regra do
+     * [Recipe.interpolatedTo] para os escalares. */
     fun interpolatedTo(other: HslChannel, fraction: Float): HslChannel {
         val f = fraction.coerceIn(0f, 1f)
+        fun lerp(a: Float, b: Float): Float = a + (b - a) * f
         return HslChannel(
-            hue = hue + (other.hue - hue) * f,
-            saturation = saturation + (other.saturation - saturation) * f,
-            luminance = luminance + (other.luminance - luminance) * f
+            hue = if (other.hue == 0f) hue else lerp(hue, other.hue),
+            saturation = if (other.saturation == 0f) saturation else lerp(saturation, other.saturation),
+            luminance = if (other.luminance == 0f) luminance else lerp(luminance, other.luminance)
         )
     }
 }

@@ -37,6 +37,88 @@ class RecipeTest {
     }
 
     @Test
+    fun interpolation_presetParcial_preservaAjusteManual() {
+        // 0.15.2: o preset só move os campos que define — a vinheta
+        // em 100 não some ao aplicar um preset sem vinheta.
+        val base = Recipe(vignette = 100f, exposure = 1f)
+        val preset = Recipe(temperature = 28f)
+        val result = base.interpolatedTo(preset, 1f)
+        assertEquals(100f, result.vignette, 0.001f)
+        assertEquals(1f, result.exposure, 0.001f)
+        assertEquals(28f, result.temperature, 0.001f)
+    }
+
+    @Test
+    fun interpolation_presetParcial_moveOCampoQueDefine() {
+        val base = Recipe(vignette = 100f)
+        val preset = Recipe(vignette = 10f, temperature = 28f)
+        val result = base.interpolatedTo(preset, 1f)
+        assertEquals(10f, result.vignette, 0.001f)
+        assertEquals(28f, result.temperature, 0.001f)
+    }
+
+    @Test
+    fun interpolation_presetParcial_meiaIntensidade() {
+        val base = Recipe(vignette = 100f, temperature = 0f)
+        val preset = Recipe(temperature = 28f)
+        val result = base.interpolatedTo(preset, 0.5f)
+        assertEquals(100f, result.vignette, 0.001f)
+        assertEquals(14f, result.temperature, 0.001f)
+    }
+
+    @Test
+    fun interpolation_presetParcial_preservaLutDoUsuario() {
+        val base = Recipe(lutId = "lut-teal-orange", lutIntensity = 0.8f)
+        val semLut = Recipe(temperature = 28f)
+        val kept = base.interpolatedTo(semLut, 1f)
+        assertEquals("lut-teal-orange", kept.lutId)
+        assertEquals(0.8f, kept.lutIntensity, 0.001f)
+        val comLut = Recipe(lutId = "lut-faded-film", lutIntensity = 0.5f)
+        val taken = base.interpolatedTo(comLut, 1f)
+        assertEquals("lut-faded-film", taken.lutId)
+        assertEquals(0.5f, taken.lutIntensity, 0.001f)
+    }
+
+    @Test
+    fun interpolation_presetParcial_preservaCanaisHslNaoDefinidos() {
+        val orange = 1
+        val yellow = 2
+        val base = Recipe(
+            hsl = List(HslChannels.COUNT) { i ->
+                if (i == orange) HslChannel(luminance = 20f) else HslChannel()
+            }
+        )
+        val preset = Recipe(
+            hsl = List(HslChannels.COUNT) { i ->
+                if (i == yellow) HslChannel(saturation = 6f) else HslChannel()
+            }
+        )
+        val result = base.interpolatedTo(preset, 1f)
+        assertEquals(20f, result.hsl[orange].luminance, 0.001f)
+        assertEquals(6f, result.hsl[yellow].saturation, 0.001f)
+    }
+
+    @Test
+    fun interpolation_presetParcial_hslParcialPorComponente() {
+        val orange = 1
+        val base = Recipe(
+            hsl = List(HslChannels.COUNT) { i ->
+                if (i == orange) HslChannel(hue = 20f, saturation = 30f, luminance = 10f)
+                else HslChannel()
+            }
+        )
+        val preset = Recipe(
+            hsl = List(HslChannels.COUNT) { i ->
+                if (i == orange) HslChannel(saturation = 6f) else HslChannel()
+            }
+        )
+        val result = base.interpolatedTo(preset, 1f)
+        assertEquals(20f, result.hsl[orange].hue, 0.001f)
+        assertEquals(6f, result.hsl[orange].saturation, 0.001f)
+        assertEquals(10f, result.hsl[orange].luminance, 0.001f)
+    }
+
+    @Test
     fun clamped_keepsValuesInsideRanges() {
         val clamped = Recipe(
             exposure = 9f,

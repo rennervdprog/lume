@@ -107,55 +107,65 @@ data class Recipe(
     fun isIdentity(): Boolean = this == Recipe(version = version)
 
     /** Interpola campo a campo entre esta receita e [other]. Usado pela
-     * intensidade de preset (0..1) e por qualquer transição de looks. */
+     * intensidade de preset (0..1) e por qualquer transição de looks.
+     *
+     * Preset parcial (0.15.2): o destino só move o campo quando o
+     * define (diferente da identidade). Um preset que não define
+     * vinheta, por exemplo, deixa a vinheta como está — aplicar um
+     * preset não apaga mais os ajustes manuais. LUT, efeito
+     * artístico e mistura são discretos e acoplados à intensidade:
+     * sem id no destino, o conjunto inteiro fica. */
     fun interpolatedTo(other: Recipe, fraction: Float): Recipe {
         val f = fraction.coerceIn(0f, 1f)
         fun lerp(a: Float, b: Float): Float = a + (b - a) * f
+        // Identidade dos escalares é 0 — exceto as intensidades
+        // acopladas (LUT/efeito/mistura), que seguem o id.
+        fun lerpIfSet(a: Float, b: Float): Float = if (b == 0f) a else lerp(a, b)
         val ownHsl = HslChannels.normalize(hsl)
         val otherHsl = HslChannels.normalize(other.hsl)
         return Recipe(
             version = CURRENT_VERSION,
-            exposure = lerp(exposure, other.exposure),
-            contrast = lerp(contrast, other.contrast),
-            highlights = lerp(highlights, other.highlights),
-            shadows = lerp(shadows, other.shadows),
-            whites = lerp(whites, other.whites),
-            blacks = lerp(blacks, other.blacks),
-            temperature = lerp(temperature, other.temperature),
-            tint = lerp(tint, other.tint),
-            vibrance = lerp(vibrance, other.vibrance),
-            saturation = lerp(saturation, other.saturation),
+            exposure = lerpIfSet(exposure, other.exposure),
+            contrast = lerpIfSet(contrast, other.contrast),
+            highlights = lerpIfSet(highlights, other.highlights),
+            shadows = lerpIfSet(shadows, other.shadows),
+            whites = lerpIfSet(whites, other.whites),
+            blacks = lerpIfSet(blacks, other.blacks),
+            temperature = lerpIfSet(temperature, other.temperature),
+            tint = lerpIfSet(tint, other.tint),
+            vibrance = lerpIfSet(vibrance, other.vibrance),
+            saturation = lerpIfSet(saturation, other.saturation),
             hsl = ownHsl.zip(otherHsl) { a, b -> a.interpolatedTo(b, f) },
-            curve = curve.interpolatedTo(other.curve, f),
-            clarity = lerp(clarity, other.clarity),
-            vignette = lerp(vignette, other.vignette),
-            grain = lerp(grain, other.grain),
-            fade = lerp(fade, other.fade),
-            // O LUT é discreto: em fração 0 a receita é exatamente
-            // esta (o LUT atual fica); acima de 0, vale o LUT do
-            // destino, com a intensidade interpolada — arrastar a
-            // intensidade de um preset com LUT dissolve o LUT junto.
-            lutId = if (f <= 0f) lutId else other.lutId,
-            lutIntensity = lerp(lutIntensity, other.lutIntensity),
-            levelsBlack = lerp(levelsBlack, other.levelsBlack),
-            levelsMid = lerp(levelsMid, other.levelsMid),
-            levelsWhite = lerp(levelsWhite, other.levelsWhite),
-            cbShadows = lerp(cbShadows, other.cbShadows),
-            cbMidtones = lerp(cbMidtones, other.cbMidtones),
-            cbHighlights = lerp(cbHighlights, other.cbHighlights),
-            haze = lerp(haze, other.haze),
-            gamma = lerp(gamma, other.gamma),
-            hueShift = lerp(hueShift, other.hueShift),
-            rgbR = lerp(rgbR, other.rgbR),
-            rgbG = lerp(rgbG, other.rgbG),
-            rgbB = lerp(rgbB, other.rgbB),
-            blur = lerp(blur, other.blur),
-            smoothSkin = lerp(smoothSkin, other.smoothSkin),
+            curve = if (other.curve.isEffectiveIdentity()) curve else curve.interpolatedTo(other.curve, f),
+            clarity = lerpIfSet(clarity, other.clarity),
+            vignette = lerpIfSet(vignette, other.vignette),
+            grain = lerpIfSet(grain, other.grain),
+            fade = lerpIfSet(fade, other.fade),
+            // O LUT é discreto e acoplado: em fração 0 a receita é
+            // exatamente esta (o LUT atual fica); acima de 0, vale o
+            // LUT do destino, com a intensidade interpolada — e sem
+            // LUT no destino, o LUT atual fica, com a intensidade.
+            lutId = if (f <= 0f || other.lutId == null) lutId else other.lutId,
+            lutIntensity = if (other.lutId == null) lutIntensity else lerp(lutIntensity, other.lutIntensity),
+            levelsBlack = lerpIfSet(levelsBlack, other.levelsBlack),
+            levelsMid = lerpIfSet(levelsMid, other.levelsMid),
+            levelsWhite = lerpIfSet(levelsWhite, other.levelsWhite),
+            cbShadows = lerpIfSet(cbShadows, other.cbShadows),
+            cbMidtones = lerpIfSet(cbMidtones, other.cbMidtones),
+            cbHighlights = lerpIfSet(cbHighlights, other.cbHighlights),
+            haze = lerpIfSet(haze, other.haze),
+            gamma = lerpIfSet(gamma, other.gamma),
+            hueShift = lerpIfSet(hueShift, other.hueShift),
+            rgbR = lerpIfSet(rgbR, other.rgbR),
+            rgbG = lerpIfSet(rgbG, other.rgbG),
+            rgbB = lerpIfSet(rgbB, other.rgbB),
+            blur = lerpIfSet(blur, other.blur),
+            smoothSkin = lerpIfSet(smoothSkin, other.smoothSkin),
             // Efeito artístico e mistura são discretos, como o LUT.
-            artisticEffect = if (f <= 0f) artisticEffect else other.artisticEffect,
-            artisticIntensity = lerp(artisticIntensity, other.artisticIntensity),
-            blendMode = if (f <= 0f) blendMode else other.blendMode,
-            blendOpacity = lerp(blendOpacity, other.blendOpacity)
+            artisticEffect = if (f <= 0f || other.artisticEffect == null) artisticEffect else other.artisticEffect,
+            artisticIntensity = if (other.artisticEffect == null) artisticIntensity else lerp(artisticIntensity, other.artisticIntensity),
+            blendMode = if (f <= 0f || other.blendMode == null) blendMode else other.blendMode,
+            blendOpacity = if (other.blendMode == null) blendOpacity else lerp(blendOpacity, other.blendOpacity)
         )
     }
 
