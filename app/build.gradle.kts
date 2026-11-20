@@ -16,8 +16,8 @@ android {
         applicationId = "app.lume"
         minSdk = 24
         targetSdk = 36
-        versionCode = 16
-        versionName = "0.14.0"
+        versionCode = 17
+        versionName = "0.14.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

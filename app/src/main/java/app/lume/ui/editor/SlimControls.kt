@@ -295,7 +295,14 @@ internal data class IconSubOption(
      * Recurso Pro no plano grátis: o item fica visível com o selo ★
      * e o toque abre o paywall ([onLockedSelect]) em vez de selecionar.
      */
-    val sealed: Boolean = false
+    val sealed: Boolean = false,
+    /**
+     * Tem Pro dentro, mas o item em si é usável no plano grátis:
+     * mostra o selo ★ e o toque seleciona normalmente — a trava
+     * mora dentro da seção (ex.: HSL: 4 canais grátis, 4 Pro).
+     * Nunca combine com [sealed]: selo que trava já é [sealed].
+     */
+    val proInside: Boolean = false
 )
 
 /**
@@ -333,6 +340,8 @@ internal fun ProSealBadge(
  * de cada item é "sub_<id>". Item com selo ([IconSubOption.sealed])
  * mostra o selo ★ e o toque abre o paywall ([onLockedSelect]) em
  * vez de selecionar — o recurso fica visível, nunca escondido.
+ * Item com Pro dentro ([IconSubOption.proInside]) também mostra o
+ * selo ★, mas o toque seleciona normalmente.
  */
 @Composable
 internal fun IconSubRail(
@@ -384,7 +393,7 @@ internal fun IconSubRail(
                         tint = tint,
                         modifier = Modifier.size(24.dp)
                     )
-                    if (option.sealed) {
+                    if (option.sealed || option.proInside) {
                         ProSealBadge(
                             modifier = Modifier.offset(x = 6.dp, y = (-6).dp)
                         )
@@ -419,7 +428,7 @@ internal fun IconSubRail(
 
 /**
  * Cabeçalho de painel (v4): título à esquerda e uma ação à
- * direita (ex.: o segmento Simples/Pro, o "Limpar tudo").
+ * direita (ex.: o "Limpar tudo").
  */
 @Composable
 internal fun PanelHeader(

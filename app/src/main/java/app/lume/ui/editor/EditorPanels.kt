@@ -65,7 +65,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -198,18 +197,21 @@ internal fun EditorToolRail(
 }
 
 /**
- * Painel Ajustar (v4): todos os controles de luz, cor e efeitos num
- * só lugar, com trilho de ícones rolável. Simples mostra 5
- * controles; Pro abre os 15, com HSL e Curva no fim do trilho. O
- * histograma fica sempre visível no topo do painel.
+ * Painel Ajustar (v4, sem seletor desde 0.14.1): todos os controles
+ * de luz, cor e efeitos num só lugar, com trilho de ícones rolável.
+ * O trilho lista SEMPRE as 23 ferramentas — nada some atrás de
+ * modo. Só o que é Pro de verdade leva o selo ★: Níveis, Balanço,
+ * Névoa, Gama, Giro de cor, Desfoque e Pele travam no toque
+ * (paywall); o HSL leva o selo porque 4 canais dentro dele são
+ * Pro, mas o toque abre a seção (os 4 canais grátis funcionam).
+ * RGB e Curva são grátis e não levam selo, como a tabela aprovada.
+ * O histograma fica sempre visível no topo do painel.
  */
 @Composable
 internal fun AdjustPanel(
     recipe: Recipe,
     histogram: List<Float>,
     isPro: Boolean,
-    simpleMode: Boolean,
-    onSimpleModeChange: (Boolean) -> Unit,
     selectedSub: String,
     onSubSelect: (String) -> Unit,
     hslChannel: Int,
@@ -222,49 +224,39 @@ internal fun AdjustPanel(
     onCompareChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Simples: 5 controles sobre a MESMA receita. Nada se perde ao
-    // trocar para o modo Pro — só a densidade muda.
-    val options = if (simpleMode) {
-        listOf(
-            IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
-            IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
-            IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
-            IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
-            IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong)
-        )
-    } else {
-        // Ajustar Pro (0.14.0): os itens novos do motor entram no
-        // fim do trilho, depois da Curva. Os Pro levam o selo ★ e o
-        // toque abre o paywall — nada some atrás de modo. O RGB é
-        // grátis (CURVES_BASIC): sem selo, como a tabela aprovada.
-        val adjustProLocked = !ProPolicy.isUnlocked(Feature.ADJUST_PRO, isPro)
-        val blurSkinLocked = !ProPolicy.isUnlocked(Feature.BLUR_SKIN, isPro)
-        listOf(
-            IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
-            IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
-            IconSubOption("highlights", "Realces", Icons.Filled.BrightnessHigh),
-            IconSubOption("shadows", "Sombras", Icons.Filled.BrightnessLow),
-            IconSubOption("whites", "Brancos", Icons.Filled.Brightness7),
-            IconSubOption("blacks", "Pretos", Icons.Filled.Brightness3),
-            IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
-            IconSubOption("tint", "Matiz", Icons.Filled.InvertColors),
-            IconSubOption("vibrance", "Vibração", Icons.Filled.Palette),
-            IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
-            IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong),
-            IconSubOption("vignette", "Vinheta", Icons.Filled.FilterFrames),
-            IconSubOption("fade", "Desbotado", Icons.Filled.Gradient),
-            IconSubOption("hsl", "HSL", Icons.Filled.ColorLens),
-            IconSubOption("curve", "Curva", Icons.Filled.ShowChart),
-            IconSubOption("levels", "Níveis", Icons.Filled.Tonality, adjustProLocked),
-            IconSubOption("balance", "Balanço", Icons.Filled.WbCloudy, adjustProLocked),
-            IconSubOption("rgb", "RGB", Icons.Filled.Equalizer),
-            IconSubOption("haze", "Névoa", Icons.Filled.Cloud, adjustProLocked),
-            IconSubOption("gamma", "Gama", Icons.Filled.BrightnessMedium, adjustProLocked),
-            IconSubOption("hueShift", "Giro de cor", Icons.Filled.Autorenew, adjustProLocked),
-            IconSubOption("blur", "Desfoque", Icons.Filled.BlurOn, blurSkinLocked),
-            IconSubOption("smooth", "Pele", Icons.Filled.Face, blurSkinLocked)
-        )
-    }
+    // Trilho único: as 23 ferramentas sobre a MESMA receita, sempre
+    // visíveis. Os Pro levam o selo ★ e o toque abre o paywall —
+    // nada some atrás de modo. O RGB é grátis (CURVES_BASIC): sem
+    // selo, como a tabela aprovada. O HSL leva selo sem travar
+    // (proInside): os 4 canais grátis abrem, os 4 Pro travam dentro.
+    val adjustProLocked = !ProPolicy.isUnlocked(Feature.ADJUST_PRO, isPro)
+    val blurSkinLocked = !ProPolicy.isUnlocked(Feature.BLUR_SKIN, isPro)
+    val hslHasProInside = !ProPolicy.isUnlocked(Feature.HSL_FULL, isPro)
+    val options = listOf(
+        IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
+        IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
+        IconSubOption("highlights", "Realces", Icons.Filled.BrightnessHigh),
+        IconSubOption("shadows", "Sombras", Icons.Filled.BrightnessLow),
+        IconSubOption("whites", "Brancos", Icons.Filled.Brightness7),
+        IconSubOption("blacks", "Pretos", Icons.Filled.Brightness3),
+        IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
+        IconSubOption("tint", "Matiz", Icons.Filled.InvertColors),
+        IconSubOption("vibrance", "Vibração", Icons.Filled.Palette),
+        IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
+        IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong),
+        IconSubOption("vignette", "Vinheta", Icons.Filled.FilterFrames),
+        IconSubOption("fade", "Desbotado", Icons.Filled.Gradient),
+        IconSubOption("hsl", "HSL", Icons.Filled.ColorLens, proInside = hslHasProInside),
+        IconSubOption("curve", "Curva", Icons.Filled.ShowChart),
+        IconSubOption("levels", "Níveis", Icons.Filled.Tonality, adjustProLocked),
+        IconSubOption("balance", "Balanço", Icons.Filled.WbCloudy, adjustProLocked),
+        IconSubOption("rgb", "RGB", Icons.Filled.Equalizer),
+        IconSubOption("haze", "Névoa", Icons.Filled.Cloud, adjustProLocked),
+        IconSubOption("gamma", "Gama", Icons.Filled.BrightnessMedium, adjustProLocked),
+        IconSubOption("hueShift", "Giro de cor", Icons.Filled.Autorenew, adjustProLocked),
+        IconSubOption("blur", "Desfoque", Icons.Filled.BlurOn, blurSkinLocked),
+        IconSubOption("smooth", "Pele", Icons.Filled.Face, blurSkinLocked)
+    )
     val effectiveSub = if (options.any { it.id == selectedSub }) {
         selectedSub
     } else {
@@ -277,10 +269,7 @@ internal fun AdjustPanel(
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
         PanelHeader(
-            title = "Ajustar",
-            trailing = {
-                MiniSegment(simple = simpleMode, onChange = onSimpleModeChange)
-            }
+            title = "Ajustar"
         )
         HistogramStrip(values = histogram)
         when (effectiveSub) {
@@ -642,65 +631,6 @@ private fun RgbSection(
             formatValue = ::formatSigned,
             onReset = { onDraft(recipe.copy(rgbB = 0f)); onCommit() },
             onCompareChange = onCompareChange
-        )
-    }
-}
-
-/** Segmento pequeno Simples/Pro no cabeçalho do painel Luz. */
-@Composable
-private fun MiniSegment(
-    simple: Boolean,
-    onChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-        shape = CircleShape,
-        modifier = modifier
-    ) {
-        Row(modifier = Modifier.padding(2.dp)) {
-            MiniSegmentOption(
-                label = "Simples",
-                selected = simple,
-                onClick = { onChange(true) }
-            )
-            MiniSegmentOption(
-                label = "Pro",
-                selected = !simple,
-                onClick = { onChange(false) }
-            )
-        }
-    }
-}
-
-@Composable
-private fun MiniSegmentOption(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(
-                if (selected) {
-                    MaterialTheme.colorScheme.primaryContainer
-                } else {
-                    Color.Transparent
-                }
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = LumeSpacing.sm, vertical = LumeSpacing.xs)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelLarge,
-            color = if (selected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
         )
     }
 }

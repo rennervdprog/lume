@@ -99,7 +99,6 @@ fun EditorScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var selectedTool by remember { mutableStateOf(EditorTool.ADJUST) }
-    var simpleMode by remember { mutableStateOf(true) }
     var splitMode by remember { mutableStateOf(false) }
     var splitFraction by remember { mutableFloatStateOf(0.5f) }
     var showSaveDialog by remember { mutableStateOf(false) }
@@ -580,8 +579,6 @@ fun EditorScreen(
                             recipe = state.recipe,
                             histogram = state.histogram,
                             isPro = state.isPro,
-                            simpleMode = simpleMode,
-                            onSimpleModeChange = { simpleMode = it },
                             selectedSub = adjustSub,
                             onSubSelect = { adjustSub = it },
                             hslChannel = hslChannel,

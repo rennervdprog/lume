@@ -51,7 +51,7 @@ class LumePanelsUiTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun painelAjustar_simplesTrocaSubFerramenta() {
+    fun painelAjustar_trocaSubFerramenta() {
         var selectedSub by mutableStateOf("exposure")
         composeRule.setContent {
             LumeTheme {
@@ -59,8 +59,6 @@ class LumePanelsUiTest {
                     recipe = Recipe(exposure = 0.5f, contrast = 10f),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = true,
-                    onSimpleModeChange = {},
                     selectedSub = selectedSub,
                     onSubSelect = { selectedSub = it },
                     hslChannel = 0,
@@ -91,19 +89,17 @@ class LumePanelsUiTest {
         }
         composeRule.onNodeWithTag("sub_contrast").performClick()
         composeRule.onNodeWithText("+10").assertIsDisplayed()
-        uitestShot("10_ajustar_simples")
+        uitestShot("10_ajustar_troca")
     }
 
     @Test
-    fun painelAjustar_proMostraCurva() {
+    fun painelAjustar_mostraCurva() {
         composeRule.setContent {
             LumeTheme {
                 AdjustPanel(
                     recipe = Recipe(),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = false,
-                    onSimpleModeChange = {},
                     selectedSub = "curve",
                     onSubSelect = {},
                     hslChannel = 0,
@@ -141,8 +137,6 @@ class LumePanelsUiTest {
                     recipe = Recipe(),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = true,
-                    onSimpleModeChange = {},
                     selectedSub = "exposure",
                     onSubSelect = {},
                     hslChannel = 0,
@@ -179,8 +173,6 @@ class LumePanelsUiTest {
                     recipe = Recipe(),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = false,
-                    onSimpleModeChange = {},
                     selectedSub = "hsl",
                     onSubSelect = {},
                     hslChannel = 0,
@@ -208,6 +200,18 @@ class LumePanelsUiTest {
         // (o rótulo do trilho nasce fora da viewport).
         composeRule.onAllNodesWithText("Saturação").onFirst().performClick()
         composeRule.onNodeWithText("Vermelho · Saturação").assertIsDisplayed()
+        // Sem seletor (0.14.1): o HSL leva o selo ★ no trilho porque
+        // 4 canais dentro são Pro — mas o toque ABRE a seção, não o
+        // paywall (os 4 canais grátis funcionam). Se o selo travasse
+        // como os Pro de verdade, este toque pediria o paywall.
+        // (O toque no canal travado acima já pediu o paywall uma
+        // vez — zera o contador para isolar o toque no trilho.)
+        paywallRequested = false
+        composeRule.onNodeWithTag("sub_strip")
+            .performScrollToNode(hasTestTag("sub_hsl"))
+        composeRule.onNodeWithTag("sub_hsl").performClick()
+        Assert.assertFalse(paywallRequested)
+        composeRule.onNodeWithText("Vermelho · Saturação").assertIsDisplayed()
         uitestShot("13_ajustar_hsl")
     }
 
@@ -220,8 +224,6 @@ class LumePanelsUiTest {
                     recipe = Recipe(clarity = 10f, vignette = 20f),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = false,
-                    onSimpleModeChange = {},
                     selectedSub = selectedSub,
                     onSubSelect = { selectedSub = it },
                     hslChannel = 0,
@@ -352,7 +354,7 @@ class LumePanelsUiTest {
     }
 
     @Test
-    fun painelAjustar_proMostraNiveisESeloAbrePaywall() {
+    fun painelAjustar_niveisESeloAbrePaywall() {
         var selectedSub by mutableStateOf("levels")
         var paywallRequests = 0
         composeRule.setContent {
@@ -361,8 +363,6 @@ class LumePanelsUiTest {
                     recipe = Recipe(levelsBlack = 20f),
                     histogram = emptyList(),
                     isPro = false,
-                    simpleMode = false,
-                    onSimpleModeChange = {},
                     selectedSub = selectedSub,
                     onSubSelect = { selectedSub = it },
                     hslChannel = 0,
@@ -394,7 +394,7 @@ class LumePanelsUiTest {
         composeRule.onNodeWithTag("sub_rgb").performClick()
         Assert.assertEquals(1, paywallRequests)
         composeRule.onNodeWithText("Vermelho").assertIsDisplayed()
-        uitestShot("18_ajustar_pro_niveis")
+        uitestShot("18_ajustar_niveis")
     }
 
     @Test
