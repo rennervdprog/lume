@@ -16,8 +16,8 @@ android {
         applicationId = "app.solarize"
         minSdk = 24
         targetSdk = 36
-        versionCode = 18
-        versionName = "0.15.0"
+        versionCode = 19
+        versionName = "0.15.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -121,7 +121,7 @@ class LumeCameraUiTest {
         }
         try {
             composeRule.waitUntil(timeoutMillis = 10000) {
-                nodesWith("Fotografe dentro do Lume")
+                nodesWith("Fotografe dentro do Solarize")
             }
         } catch (e: ComposeTimeoutException) {
             // Diagnóstico: despeja a árvore de semântica no logcat
@@ -143,7 +143,7 @@ class LumeCameraUiTest {
         // existe na árvore, mas assertIsDisplayed falha porque não
         // está visível (run #43: o título passou, o botão não).
         // Rola até cada botão antes de conferir.
-        composeRule.onNodeWithText("Fotografe dentro do Lume").assertIsDisplayed()
+        composeRule.onNodeWithText("Fotografe dentro do Solarize").assertIsDisplayed()
         composeRule.onNodeWithText("Permitir acesso à câmera").performScrollTo()
         composeRule.onNodeWithText("Permitir acesso à câmera").assertIsDisplayed()
         composeRule.onNodeWithText("Agora não").performScrollTo()

@@ -131,7 +131,7 @@ import kotlinx.coroutines.withContext
 private const val BANNER_PRESET_ID = "builtin-pele-dourada"
 
 /**
- * Barra do topo das abas Fotos e Presets: a marca "Lume." à
+ * Barra do topo das abas Fotos e Presets: a marca "Solarize." à
  * esquerda e a pílula do Pro à direita. A conta vive na navegação
  * inferior (aba Conta), não mais aqui.
  */
@@ -154,7 +154,7 @@ private fun HomeTopBar(
             modifier = Modifier.testTag("home_wordmark")
         ) {
             Text(
-                text = "Lume",
+                text = "Solarize",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontWeight = FontWeight.ExtraBold
                 ),
@@ -174,7 +174,7 @@ private fun HomeTopBar(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .height(32.dp)
-                .semantics { contentDescription = "Lume Pro" }
+                .semantics { contentDescription = "Solarize Pro" }
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = LumeSpacing.sm),
@@ -656,7 +656,7 @@ fun PhotosTab(
                         }
                         item(span = { GridItemSpan(maxLineSpan) }) {
                             Text(
-                                text = "Lume — feito para quem vive de foto.",
+                                text = "Solarize — feito para quem vive de foto.",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier

@@ -76,7 +76,7 @@ object CubeParser {
                 }
                 head.equals("LUT_1D_SIZE", ignoreCase = true) -> {
                     return CubeParseResult.Fail(
-                        "Este é um LUT 1D — o Lume só importa LUT 3D (.cube)."
+                        "Este é um LUT 1D — o Solarize só importa LUT 3D (.cube)."
                     )
                 }
                 head.equals("LUT_3D_SIZE", ignoreCase = true) -> {

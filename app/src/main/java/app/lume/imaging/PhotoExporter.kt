@@ -41,7 +41,7 @@ object PhotoExporter {
 
     /**
      * Renderiza [recipe] sobre a foto [photoUri] em resolução total,
-     * aplica a [geometry] e salva o JPEG na galeria (Pasta "Lume").
+     * aplica a [geometry] e salva o JPEG na galeria (Pasta "Solarize").
      * Retorna a Uri do arquivo. A geometria roda depois da cor, igual
      * ao preview — o que o usuário vê é o que sai no arquivo.
      * [blendBitmap] é a segunda foto da mistura, decodificada pelo
@@ -123,7 +123,7 @@ object PhotoExporter {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(
                     MediaStore.Images.Media.RELATIVE_PATH,
-                    Environment.DIRECTORY_PICTURES + "/Lume"
+                    Environment.DIRECTORY_PICTURES + "/Solarize"
                 )
             }
         }
@@ -158,6 +158,6 @@ object PhotoExporter {
         } catch (t: Throwable) {
             System.currentTimeMillis().toString()
         }
-        return "Lume_$stamp.jpg"
+        return "Solarize_$stamp.jpg"
     }
 }

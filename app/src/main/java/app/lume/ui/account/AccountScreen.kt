@@ -62,7 +62,7 @@ fun AccountScreen(
     LaunchedEffect(state.exportPayload) {
         val payload = state.exportPayload
         if (payload != null) {
-            ShareHelper.shareText(context, "Meus presets (Lume)", payload)
+            ShareHelper.shareText(context, "Meus presets (Solarize)", payload)
             viewModel.consumeExportPayload()
         }
     }

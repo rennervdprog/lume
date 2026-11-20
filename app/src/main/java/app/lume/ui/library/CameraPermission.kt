@@ -271,18 +271,18 @@ fun CameraPermissionEducation(
             }
         }
         Text(
-            text = "Fotografe dentro do Lume",
+            text = "Fotografe dentro do Solarize",
             style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(top = LumeSpacing.sm)
         )
         Text(
             text = "Para abrir a câmera com os seus presets ao vivo, o " +
-                "Lume precisa da sua permissão para usar a câmera.",
+                "Solarize precisa da sua permissão para usar a câmera.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         CameraPermissionBullet(
-            "O Lume só fotografa quando você toca no botão. Nada é enviado para lugar nenhum."
+            "O Solarize só fotografa quando você toca no botão. Nada é enviado para lugar nenhum."
         )
         CameraPermissionBullet(
             "A foto vai para a sua galeria só quando você exportar."

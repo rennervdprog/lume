@@ -375,7 +375,7 @@ private fun saveCapture(context: Context, bitmap: Bitmap): Uri? {
         } catch (t: Throwable) {
             System.currentTimeMillis().toString()
         }
-        val file = File(dir, "Lume_$stamp.jpg")
+        val file = File(dir, "Solarize_$stamp.jpg")
         FileOutputStream(file).use { stream ->
             bitmap.compress(Bitmap.CompressFormat.JPEG, 92, stream)
         }

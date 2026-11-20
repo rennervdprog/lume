@@ -63,7 +63,7 @@ fun PaywallScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Lume Pro") },
+                title = { Text("Solarize Pro") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(

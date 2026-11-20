@@ -111,7 +111,7 @@ class LumeAppUiTest {
 
     @Test
     fun paywallAbrePelaEstrela() {
-        composeRule.onNodeWithContentDescription("Lume Pro").performClick()
+        composeRule.onNodeWithContentDescription("Solarize Pro").performClick()
         composeRule.waitUntil(timeoutMillis = 8000) {
             nodesWith("Grátis de verdade. Pro para quem vive de foto.")
         }

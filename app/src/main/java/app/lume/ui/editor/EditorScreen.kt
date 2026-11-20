@@ -712,7 +712,7 @@ fun EditorScreen(
             onCopyCode = { json ->
                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE)
                     as ClipboardManager
-                clipboard.setPrimaryClip(ClipData.newPlainText("Preset Lume", json))
+                clipboard.setPrimaryClip(ClipData.newPlainText("Preset Solarize", json))
                 qrPreset = null
                 scope.launch {
                     snackbarHostState.showSnackbar("Código do preset copiado.")
@@ -819,7 +819,7 @@ private fun ExportSheet(
                 style = MaterialTheme.typography.titleLarge
             )
             Text(
-                text = "JPEG · Qualidade 92% · Pasta Lume na galeria",
+                text = "JPEG · Qualidade 92% · Pasta Solarize na galeria",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

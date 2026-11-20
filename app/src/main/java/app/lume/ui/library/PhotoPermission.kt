@@ -307,13 +307,13 @@ fun PhotoPermissionEducation(
             modifier = Modifier.padding(top = LumeSpacing.sm)
         )
         Text(
-            text = "Para mostrar suas fotos na tela inicial, o Lume " +
+            text = "Para mostrar suas fotos na tela inicial, o Solarize " +
                 "precisa da sua permissão para ver a galeria.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         PermissionBullet(
-            "O Lume só lê as fotos. Nada é enviado para lugar nenhum."
+            "O Solarize só lê as fotos. Nada é enviado para lugar nenhum."
         )
         PermissionBullet(
             "Você pode liberar só algumas fotos, em vez da galeria toda."
