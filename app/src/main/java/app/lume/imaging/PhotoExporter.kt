@@ -14,6 +14,7 @@ import android.provider.MediaStore
 import app.lume.core.Geometry
 import app.lume.core.Recipe
 import app.lume.core.RecipeColorMatrix
+import app.lume.core.TextOverlay
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -53,7 +54,9 @@ object PhotoExporter {
         recipe: Recipe,
         geometry: Geometry = Geometry.IDENTITY,
         lutGrid: Bitmap? = null,
-        blendBitmap: Bitmap? = null
+        blendBitmap: Bitmap? = null,
+        /** Texto sobre a foto (Fase 1): null ou vazio não desenha nada. */
+        textOverlay: TextOverlay? = null
     ): Result<Uri> = withContext(Dispatchers.IO) {
         try {
             val source = BitmapLoader.decodeFull(context, photoUri)
@@ -67,6 +70,11 @@ object PhotoExporter {
             val final = GeometryTransform.apply(rendered, geometry)
             if (final !== rendered) {
                 rendered.recycle()
+            }
+            // O texto é a última camada: fica por cima de tudo, nas
+            // frações da foto final — as mesmas da tela.
+            if (textOverlay != null && !textOverlay.isEmpty) {
+                TextOverlayDraw.draw(context, final, textOverlay)
             }
             val savedUri = saveToGallery(context, final)
             final.recycle()

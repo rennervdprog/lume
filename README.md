@@ -225,3 +225,16 @@ Regras duras aplicadas (AGENTS.md):
    teste — os valores do estudo são hipótese, não promessa.
 5. Política de privacidade em PT-BR + página web de exclusão de conta.
 6. Coleções de presets P0 testadas em pele/luz brasileiras (Fase 1).
+
+## Fontes e fotos de exemplo (0.15.5, Fase 1 do plano)
+
+- **Fontes do Texto** (`app/src/main/res/font/`): Bebas Neue, Playfair
+  Display, Dancing Script, Roboto Condensed e Manrope — todas SIL Open
+  Font License 1.1, baixadas do repositório `google/fonts` (cada família
+  tem seu `OFL.txt` lá). Embutidas no APK: funcionam offline. O Manrope
+  não era a fonte do app antes — este app nunca teve fonte embutida (o
+  Manrope via Compose resources era do Constância, não daqui).
+- **Fotos de exemplo** (`app/src/main/res/drawable-nodpi/sample_*.jpg`,
+  12 no total): as 4 originais + 8 curadas do Pixabay (Pixabay License —
+  uso comercial livre, sem atribuição), baixadas uma vez e embutidas no
+  app. Lista única em `SamplePhotos` (`data/photos/`).

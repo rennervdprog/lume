@@ -101,7 +101,7 @@ internal fun formatExposure(value: Float): String {
 }
 
 enum class EditorTool {
-    CROP, FILTER, ADJUST, BLEND, HISTORY
+    CROP, FILTER, ADJUST, TEXT, BLEND, HISTORY
 }
 
 /** Trilho de ferramentas: ícone + rótulo, uma ferramenta por vez. */
@@ -115,6 +115,7 @@ internal fun EditorToolRail(
         Triple(EditorTool.CROP, "Cortar", SolarizeIcons.Crop),
         Triple(EditorTool.FILTER, "Filtro", SolarizeIcons.Filter),
         Triple(EditorTool.ADJUST, "Ajustar", SolarizeIcons.Adjust),
+        Triple(EditorTool.TEXT, "Texto", SolarizeIcons.Text),
         Triple(EditorTool.BLEND, "Mistura", SolarizeIcons.Blend),
         Triple(EditorTool.HISTORY, "Histórico", SolarizeIcons.History)
     )
@@ -193,6 +194,12 @@ internal fun AdjustPanel(
     onCommit: () -> Unit,
     onRequestPaywall: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
+    /** Cores da foto (Fase 1): vazia até a extração terminar. */
+    paletteColors: List<Int> = emptyList(),
+    /** Cor selecionada como cor do Texto (borda azul na faixa). */
+    selectedTextColor: Int? = null,
+    /** Toque na amostra: copiar o hex e virar a cor do Texto. */
+    onPaletteColorSelect: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Trilho único: as 23 ferramentas sobre a MESMA receita, sempre
@@ -243,6 +250,14 @@ internal fun AdjustPanel(
             title = "Ajustar"
         )
         HistogramStrip(values = histogram)
+        // Cores da foto (Fase 1): sempre visível no Ajustar, como o
+        // histograma — some só enquanto a extração não terminou.
+        PhotoPaletteStrip(
+            title = "Cores da foto",
+            colors = paletteColors,
+            selectedColor = selectedTextColor,
+            onColorSelect = onPaletteColorSelect
+        )
         when (effectiveSub) {
             "hsl" -> HslSection(
                 recipe = recipe,

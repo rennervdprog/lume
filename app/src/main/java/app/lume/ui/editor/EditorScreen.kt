@@ -66,19 +66,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lume.core.BuiltInLuts
 import app.lume.core.Preset
 import app.lume.core.RecipeJson
+import app.lume.core.TextFont
+import app.lume.core.TextOverlay
+import app.lume.core.fitScale
 import app.lume.imaging.PresetQr
 import app.lume.imaging.ShareHelper
 import app.lume.ui.components.ShowMessageAsSnackbar
@@ -86,6 +98,7 @@ import app.lume.ui.components.SupportingText
 import app.lume.ui.components.rememberPhotoPickerLauncher
 import app.lume.ui.theme.LumeSpacing
 import kotlinx.coroutines.launch
+import kotlin.math.minOf
 import kotlin.math.roundToInt
 
 /**
@@ -104,7 +117,6 @@ private val cropTabSaver = Saver<CropTab, String>(
     save = { it.name },
     restore = { runCatching { CropTab.valueOf(it) }.getOrDefault(CropTab.CROP) }
 )
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -142,6 +154,38 @@ fun EditorScreen(
     var hslAttr by rememberSaveable { mutableStateOf("hue") }
     var pendingPresetId by remember { mutableStateOf<String?>(null) }
     var pendingFilterTab by remember { mutableStateOf<FilterTab?>(null) }
+
+    // Texto sobre a foto (Fase 1): rememberSaveable como o resto da
+    // seleção — o remember puro morre ao ir ao paywall e voltar.
+    // A fonte usa Saver por nome (enum não é Bundle-saveable).
+    var textOverlayText by rememberSaveable { mutableStateOf("") }
+    var textFont by rememberSaveable(stateSaver = textFontSaver) {
+        mutableStateOf(TextFont.DANCING_SCRIPT)
+    }
+    var textSizeFraction by rememberSaveable {
+        mutableFloatStateOf(TextOverlay.DEFAULT_SIZE_FRACTION)
+    }
+    var textColorArgb by rememberSaveable {
+        mutableIntStateOf(TextOverlay.DEFAULT_COLOR_ARGB)
+    }
+    var textCenterX by rememberSaveable {
+        mutableFloatStateOf(TextOverlay.DEFAULT_CENTER_X)
+    }
+    var textCenterY by rememberSaveable {
+        mutableFloatStateOf(TextOverlay.DEFAULT_CENTER_Y)
+    }
+    val textOverlay = TextOverlay(
+        text = textOverlayText,
+        font = textFont,
+        sizeFraction = textSizeFraction,
+        colorArgb = textColorArgb,
+        centerX = textCenterX,
+        centerY = textCenterY
+    )
+    // Tamanho da área da foto em pixels: a foto exibida (Fit) vive
+    // dentro dela com letterbox — o texto é posicionado sobre o
+    // retângulo exibido, não sobre a área cheia.
+    var photoAreaSize by remember { mutableStateOf(IntSize.Zero) }
 
     val openPicker = rememberPhotoPickerLauncher { uri ->
         // Foto nova pelo seletor do Editor: o preset do banner não
@@ -238,6 +282,57 @@ fun EditorScreen(
         0 to 0
     }
 
+    // Retângulo da foto exibida dentro da área (ContentScale.Fit
+    // centraliza com letterbox): é nele que o texto vive — as
+    // frações do overlay são frações DESTE retângulo, que é a foto.
+    val displayedSize = if (photoAreaSize != IntSize.Zero && photoWidth > 0 && photoHeight > 0) {
+        val scale = minOf(
+            photoAreaSize.width / photoWidth.toFloat(),
+            photoAreaSize.height / photoHeight.toFloat()
+        )
+        IntSize(
+            (photoWidth * scale).roundToInt(),
+            (photoHeight * scale).roundToInt()
+        )
+    } else {
+        IntSize.Zero
+    }
+    val displayedOffset = IntOffset(
+        (photoAreaSize.width - displayedSize.width) / 2,
+        (photoAreaSize.height - displayedSize.height) / 2
+    )
+
+    // Tamanho do texto na tela (Fase 1): medido no tamanho base e
+    // encolhido só se não couber na foto (mesma regra da
+    // exportação). Fora de qualquer `if`: o remember nunca muda de
+    // posição entre recomposições.
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val textBaseSizePx = textOverlay.sizeFraction * displayedSize.width
+    val textBaseFontSize = with(density) { textBaseSizePx.toInt().toSp() }
+    val textMeasuredWidthPx = remember(textOverlay.text, textOverlay.font, textBaseFontSize) {
+        if (textOverlay.text.isBlank() || textBaseSizePx <= 0f) {
+            0f
+        } else {
+            textMeasurer.measure(
+                text = AnnotatedString(textOverlay.text),
+                style = TextStyle(
+                    fontFamily = textOverlay.font.fontFamily(),
+                    fontSize = textBaseFontSize
+                )
+            ).size.width.toFloat()
+        }
+    }
+    val textScale = fitScale(
+        textMeasuredWidthPx,
+        TextOverlay.MAX_WIDTH_FRACTION * displayedSize.width
+    )
+    val textFontSize = with(density) { (textBaseSizePx * textScale).toInt().toSp() }
+
+    // Com a ferramenta Texto aberta, o gesto na foto é do texto
+    // (arrastar move) — o segurar-para-comparar fica desligado.
+    val textToolActive = selectedTool == EditorTool.TEXT
+
     val onConfirmPanel: () -> Unit = {
         viewModel.confirmPanelSession()
         panelVisible = false
@@ -315,22 +410,27 @@ fun EditorScreen(
                         .fillMaxWidth()
                         .weight(1f)
                         .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-                        .pointerInput(splitMode, cropOverlayVisible) {
+                        .onSizeChanged { photoAreaSize = it }
+                        .pointerInput(splitMode, cropOverlayVisible, textToolActive) {
                             if (cropOverlayVisible) {
                                 // A moldura é dona dos gestos na foto.
                                 return@pointerInput
                             }
                             if (!splitMode) {
-                                detectTapGestures(
-                                    onPress = {
-                                        showOriginal = true
-                                        try {
-                                            awaitRelease()
-                                        } finally {
-                                            showOriginal = false
+                                // Com a ferramenta Texto aberta, o toque
+                                // não mostra a original: o gesto é do texto.
+                                if (!textToolActive) {
+                                    detectTapGestures(
+                                        onPress = {
+                                            showOriginal = true
+                                            try {
+                                                awaitRelease()
+                                            } finally {
+                                                showOriginal = false
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             } else {
                                 detectDragGestures { change, _ ->
                                     splitFraction = (change.position.x / size.width.toFloat())
@@ -434,6 +534,77 @@ fun EditorScreen(
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier.fillMaxSize()
                             )
+                        }
+                    }
+                    if (!textOverlay.isEmpty && !showOriginal && displayedSize != IntSize.Zero) {
+                        // Texto sobre a foto (Fase 1): por cima da
+                        // imagem, abaixo dos botões flutuantes. No
+                        // modo dividido, o texto é edição: só no
+                        // lado "depois". Arrastar na foto move o
+                        // texto (só com a ferramenta Texto aberta).
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(
+                                    if (splitMode) {
+                                        Modifier.drawWithContent {
+                                            clipRect(left = size.width * splitFraction) {
+                                                this@drawWithContent.drawContent()
+                                            }
+                                        }
+                                    } else {
+                                        Modifier
+                                    }
+                                )
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .offset { displayedOffset }
+                                    .size(
+                                        width = with(density) { displayedSize.width.toDp() },
+                                        height = with(density) { displayedSize.height.toDp() }
+                                    )
+                                    .pointerInput(textToolActive, displayedSize) {
+                                        if (textToolActive) {
+                                            detectDragGestures { change, dragAmount ->
+                                                change.consume()
+                                                textCenterX = (
+                                                    textCenterX +
+                                                        dragAmount.x / displayedSize.width
+                                                    ).coerceIn(0f, 1f)
+                                                textCenterY = (
+                                                    textCenterY +
+                                                        dragAmount.y / displayedSize.height
+                                                    ).coerceIn(0f, 1f)
+                                            }
+                                        }
+                                    }
+                            ) {
+                                Text(
+                                    text = textOverlay.text,
+                                    fontFamily = textOverlay.font.fontFamily(),
+                                    fontSize = textFontSize,
+                                    color = Color(textOverlay.colorArgb),
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color.Black.copy(alpha = 0.7f),
+                                            offset = Offset(0f, 2f),
+                                            blurRadius = 12f
+                                        )
+                                    ),
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .offset {
+                                            IntOffset(
+                                                ((textCenterX - 0.5f) * displayedSize.width)
+                                                    .roundToInt(),
+                                                ((textCenterY - 0.5f) * displayedSize.height)
+                                                    .roundToInt()
+                                            )
+                                        }
+                                )
+                            }
                         }
                     }
                     if (cropOverlayVisible) {
@@ -618,7 +789,33 @@ fun EditorScreen(
                             onDraft = { viewModel.updateRecipeDraft(it) },
                             onCommit = { viewModel.commitRecipe() },
                             onRequestPaywall = { viewModel.requestPaywall() },
-                            onCompareChange = { showOriginal = it }
+                            onCompareChange = { showOriginal = it },
+                            paletteColors = state.paletteColors,
+                            selectedTextColor = textColorArgb,
+                            onPaletteColorSelect = { argb ->
+                                // Toque na amostra: copia o hex e deixa
+                                // a cor como cor da ferramenta Texto.
+                                textColorArgb = argb
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE
+                                ) as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText("Cor da foto", hexString(argb))
+                                )
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        "Cor ${hexString(argb)} copiada."
+                                    )
+                                }
+                            }
+                        )
+                        EditorTool.TEXT -> TextPanel(
+                            overlay = textOverlay,
+                            paletteColors = state.paletteColors,
+                            onTextChange = { textOverlayText = it },
+                            onFontChange = { textFont = it },
+                            onSizeChange = { textSizeFraction = it },
+                            onColorChange = { textColorArgb = it }
                         )
                         EditorTool.CROP -> CropPanel(
                             geometry = state.geometry,
@@ -729,7 +926,7 @@ fun EditorScreen(
             onDismiss = { showExportSheet = false },
             onSave = {
                 showExportSheet = false
-                viewModel.exportPhoto()
+                viewModel.exportPhoto(textOverlay.takeIf { !it.isEmpty })
             }
         )
     }
@@ -855,7 +1052,7 @@ private fun ExportSheet(
             )
             Text(
                 text = "A foto original nunca é alterada. Outros formatos " +
-                    "chegam na Fase 1.",
+                    "chegam nas próximas fases.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

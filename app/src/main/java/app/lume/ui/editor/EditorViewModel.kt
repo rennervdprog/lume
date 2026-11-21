@@ -18,6 +18,7 @@ import app.lume.core.Geometry
 import app.lume.core.Preset
 import app.lume.data.PresetLimitReached
 import app.lume.core.Recipe
+import app.lume.core.TextOverlay
 import app.lume.data.DraftRepository
 import app.lume.data.DraftThumbnails
 import app.lume.data.PresetRepository
@@ -64,7 +65,9 @@ data class EditorUiState(
     /** LUTs .cube importados pelo usuário (aba Meus LUTs). */
     val userLuts: List<UserLut> = emptyList(),
     /** A segunda foto da mistura foi escolhida (vive só na sessão). */
-    val hasBlendPhoto: Boolean = false
+    val hasBlendPhoto: Boolean = false,
+    /** Cores da foto (Fase 1): extraídas da foto atual, no aparelho. */
+    val paletteColors: List<Int> = emptyList()
 )
 
 class EditorViewModel(
@@ -434,7 +437,8 @@ class EditorViewModel(
                 exportedUri = null,
                 appliedPresetName = null,
                 presetIntensity = 1f,
-                hasBlendPhoto = false
+                hasBlendPhoto = false,
+                paletteColors = emptyList()
             )
         }
         viewModelScope.launch {
@@ -462,6 +466,23 @@ class EditorViewModel(
                     recipe = startRecipe,
                     isLoadingPhoto = false
                 )
+            }
+            // Cores da foto (Fase 1): extração fora da thread de UI.
+            // Se outra foto abrir no meio, o resultado velho é
+            // descartado — nunca pode pintar a faixa com a foto errada.
+            viewModelScope.launch(Dispatchers.Default) {
+                val colors = try {
+                    if (bitmap.isRecycled || previewBitmap !== bitmap) {
+                        emptyList()
+                    } else {
+                        PhotoPalette.extract(bitmap)
+                    }
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (previewBitmap === bitmap) {
+                    _uiState.update { it.copy(paletteColors = colors) }
+                }
             }
             refreshRender()
         }
@@ -725,7 +746,7 @@ class EditorViewModel(
         }
     }
 
-    fun exportPhoto() {
+    fun exportPhoto(textOverlay: TextOverlay? = null) {
         val uri = _uiState.value.photoUri ?: return
         if (_uiState.value.isExporting) return
         _uiState.update { it.copy(isExporting = true, exportedUri = null) }
@@ -735,7 +756,8 @@ class EditorViewModel(
             val lutGrid = lutGridFor(recipe)
             val blend = blendBitmapFor(recipe)
             val result = PhotoExporter.exportJpeg(
-                appContext, uri, recipe, geometry, lutGrid, blend
+                appContext, uri, recipe, geometry, lutGrid, blend,
+                textOverlay = textOverlay
             )
             result.fold(
                 onSuccess = { savedUri ->

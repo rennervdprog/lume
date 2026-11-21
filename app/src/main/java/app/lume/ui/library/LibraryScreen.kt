@@ -110,6 +110,7 @@ import app.lume.data.Draft
 import app.lume.data.DraftThumbnails
 import app.lume.data.photos.DevicePhoto
 import app.lume.data.photos.DevicePhotos
+import app.lume.data.photos.SamplePhotos
 import app.lume.data.photos.groupByDay
 import app.lume.ui.editor.EditorTool
 import app.lume.ui.editor.FilterTab
@@ -212,22 +213,22 @@ private val startActions = listOf(
     StartAction("Abrir foto", null, null),
     StartAction(
         "Aplicar preset",
-        R.drawable.sample_portrait,
+        SamplePhotos.portrait,
         PendingEditorTarget.Target(EditorTool.FILTER)
     ),
     StartAction(
         "Cortar",
-        R.drawable.sample_landscape,
+        SamplePhotos.landscape,
         PendingEditorTarget.Target(EditorTool.CROP)
     ),
     StartAction(
         "Ajustar",
-        R.drawable.sample_street,
+        SamplePhotos.street,
         PendingEditorTarget.Target(EditorTool.ADJUST)
     ),
     StartAction(
         "LUT",
-        R.drawable.sample_coffee,
+        SamplePhotos.coffee,
         PendingEditorTarget.Target(
             EditorTool.FILTER,
             filterTab = FilterTab.Luts
@@ -588,6 +589,61 @@ fun PhotosTab(
                                 }
                             }
                         }
+                        // Fotos de exemplo (Fase 1): as 12 amostras
+                        // embutidas — tocar abre a foto no Editor.
+                        // A URI é do próprio pacote (recurso): o
+                        // ContentResolver abre sem permissão, e o
+                        // Editor decodifica como qualquer foto.
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column(
+                                modifier = Modifier.padding(top = LumeSpacing.md)
+                            ) {
+                                SectionTitle(
+                                    "Fotos de exemplo",
+                                    modifier = Modifier.padding(
+                                        horizontal = LumeSpacing.md
+                                    )
+                                )
+                                Text(
+                                    text = "Para testar presets e filtros, sem foto própria.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(
+                                        start = LumeSpacing.md,
+                                        end = LumeSpacing.md,
+                                        top = LumeSpacing.xs
+                                    )
+                                )
+                                LazyRow(
+                                    contentPadding = PaddingValues(
+                                        horizontal = LumeSpacing.md
+                                    ),
+                                    horizontalArrangement = Arrangement.spacedBy(
+                                        LumeSpacing.sm
+                                    ),
+                                    modifier = Modifier
+                                        .padding(top = LumeSpacing.xs)
+                                        .testTag("sample_row")
+                                ) {
+                                    items(
+                                        items = SamplePhotos.all,
+                                        key = { it }
+                                    ) { resId ->
+                                        SampleTile(
+                                            resId = resId,
+                                            onClick = {
+                                                onOpenEditor(
+                                                    Uri.parse(
+                                                        "android.resource://" +
+                                                            "${context.packageName}/$resId"
+                                                    )
+                                                )
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         if (query.isBlank()) {
                             if (groups.isEmpty()) {
                                 item(span = { GridItemSpan(maxLineSpan) }) {
@@ -751,6 +807,34 @@ private fun StartTile(
             textAlign = TextAlign.Center,
             maxLines = 2,
             modifier = Modifier.padding(top = 6.dp)
+        )
+    }
+}
+
+/**
+ * Uma foto de exemplo (Fase 1): miniatura real embutida, no mesmo
+ * tamanho do atalho de "Começar". O toque abre a foto no Editor,
+ * como se fosse uma foto do aparelho.
+ */
+@Composable
+private fun SampleTile(
+    @DrawableRes resId: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(96.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Image(
+            painter = painterResource(id = resId),
+            contentDescription = "Foto de exemplo para editar",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
         )
     }
 }
@@ -1142,8 +1226,8 @@ fun PresetsTab(
     // app (retrato para Pele e Retrato, paisagem para o resto) —
     // a aba nunca fica com cartões vazios.
     val draftSample = rememberSampleBitmap(state.drafts.firstOrNull()?.photoUri)
-    val fallbackPortrait = rememberDrawableSample(R.drawable.sample_portrait)
-    val fallbackLandscape = rememberDrawableSample(R.drawable.sample_landscape)
+    val fallbackPortrait = rememberDrawableSample(SamplePhotos.portrait)
+    val fallbackLandscape = rememberDrawableSample(SamplePhotos.landscape)
     val sample = draftSample ?: fallbackPortrait
 
     // O preset que a demonstração mostra: Pele Dourada, com quedas

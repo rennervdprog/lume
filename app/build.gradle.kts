@@ -16,8 +16,8 @@ android {
         applicationId = "app.solarize"
         minSdk = 24
         targetSdk = 36
-        versionCode = 22
-        versionName = "0.15.4"
+        versionCode = 23
+        versionName = "0.15.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -61,6 +61,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.palette.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)

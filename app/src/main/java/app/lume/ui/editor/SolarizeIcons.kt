@@ -124,6 +124,17 @@ object SolarizeIcons {
             )
             .build()
     }
+    val Text: ImageVector by lazy {
+        ImageVector.Builder("Text", 24.dp, 24.dp, 24f, 24f)
+            .addPath(
+                pathData = PathParser().parsePathString("M5 6 H19 M12 6 V18 M8.5 21 H15.5").toNodes(),
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round,
+                strokeLineJoin = StrokeJoin.Round
+            )
+            .build()
+    }
     val Blend: ImageVector by lazy {
         ImageVector.Builder("Blend", 24.dp, 24.dp, 24f, 24f)
             .addPath(
