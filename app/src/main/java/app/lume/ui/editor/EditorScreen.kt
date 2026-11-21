@@ -98,7 +98,6 @@ import app.lume.ui.components.SupportingText
 import app.lume.ui.components.rememberPhotoPickerLauncher
 import app.lume.ui.theme.LumeSpacing
 import kotlinx.coroutines.launch
-import kotlin.math.minOf
 import kotlin.math.roundToInt
 
 /**
