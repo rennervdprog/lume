@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -324,7 +323,7 @@ internal fun ProSealBadge(
             .border(2.dp, Color.White, CircleShape)
     ) {
         Icon(
-            imageVector = Icons.Filled.Star,
+            imageVector = SolarizeIcons.ProSparkle,
             contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onPrimary,
             modifier = Modifier.size(11.dp)

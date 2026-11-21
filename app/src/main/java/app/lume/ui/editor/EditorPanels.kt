@@ -27,39 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Autorenew
-import androidx.compose.material.icons.filled.BlurOn
-import androidx.compose.material.icons.filled.Brightness3
-import androidx.compose.material.icons.filled.Brightness7
-import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.BrightnessLow
-import androidx.compose.material.icons.filled.BrightnessMedium
-import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.ColorLens
-import androidx.compose.material.icons.filled.Contrast
-import androidx.compose.material.icons.filled.Crop
-import androidx.compose.material.icons.filled.Equalizer
-import androidx.compose.material.icons.filled.Face
-import androidx.compose.material.icons.filled.FilterFrames
-import androidx.compose.material.icons.filled.Gradient
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.InvertColors
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Opacity
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.filled.Style
-import androidx.compose.material.icons.filled.Thermostat
-import androidx.compose.material.icons.filled.Tonality
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.WbCloudy
-import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -141,11 +112,11 @@ internal fun EditorToolRail(
     modifier: Modifier = Modifier
 ) {
     val tools = listOf(
-        Triple(EditorTool.CROP, "Cortar", Icons.Filled.Crop),
-        Triple(EditorTool.FILTER, "Filtro", Icons.Filled.Style),
-        Triple(EditorTool.ADJUST, "Ajustar", Icons.Filled.Tune),
-        Triple(EditorTool.BLEND, "Mistura", Icons.Filled.Layers),
-        Triple(EditorTool.HISTORY, "Histórico", Icons.Filled.History)
+        Triple(EditorTool.CROP, "Cortar", SolarizeIcons.Crop),
+        Triple(EditorTool.FILTER, "Filtro", SolarizeIcons.Filter),
+        Triple(EditorTool.ADJUST, "Ajustar", SolarizeIcons.Adjust),
+        Triple(EditorTool.BLEND, "Mistura", SolarizeIcons.Blend),
+        Triple(EditorTool.HISTORY, "Histórico", SolarizeIcons.History)
     )
     Row(
         modifier = modifier
@@ -233,29 +204,29 @@ internal fun AdjustPanel(
     val blurSkinLocked = !ProPolicy.isUnlocked(Feature.BLUR_SKIN, isPro)
     val hslHasProInside = !ProPolicy.isUnlocked(Feature.HSL_FULL, isPro)
     val options = listOf(
-        IconSubOption("exposure", "Exposição", Icons.Filled.WbSunny),
-        IconSubOption("contrast", "Contraste", Icons.Filled.Contrast),
-        IconSubOption("highlights", "Realces", Icons.Filled.BrightnessHigh),
-        IconSubOption("shadows", "Sombras", Icons.Filled.BrightnessLow),
-        IconSubOption("whites", "Brancos", Icons.Filled.Brightness7),
-        IconSubOption("blacks", "Pretos", Icons.Filled.Brightness3),
-        IconSubOption("temperature", "Temperatura", Icons.Filled.Thermostat),
-        IconSubOption("tint", "Matiz", Icons.Filled.InvertColors),
-        IconSubOption("vibrance", "Vibração", Icons.Filled.Palette),
-        IconSubOption("saturation", "Saturação", Icons.Filled.Opacity),
-        IconSubOption("clarity", "Claridade", Icons.Filled.CenterFocusStrong),
-        IconSubOption("vignette", "Vinheta", Icons.Filled.FilterFrames),
-        IconSubOption("fade", "Desbotado", Icons.Filled.Gradient),
-        IconSubOption("hsl", "HSL", Icons.Filled.ColorLens, proInside = hslHasProInside),
-        IconSubOption("curve", "Curva", Icons.Filled.ShowChart),
-        IconSubOption("levels", "Níveis", Icons.Filled.Tonality, adjustProLocked),
-        IconSubOption("balance", "Balanço", Icons.Filled.WbCloudy, adjustProLocked),
-        IconSubOption("rgb", "RGB", Icons.Filled.Equalizer),
-        IconSubOption("haze", "Névoa", Icons.Filled.Cloud, adjustProLocked),
-        IconSubOption("gamma", "Gama", Icons.Filled.BrightnessMedium, adjustProLocked),
-        IconSubOption("hueShift", "Giro de cor", Icons.Filled.Autorenew, adjustProLocked),
-        IconSubOption("blur", "Desfoque", Icons.Filled.BlurOn, blurSkinLocked),
-        IconSubOption("smooth", "Pele", Icons.Filled.Face, blurSkinLocked)
+        IconSubOption("exposure", "Exposição", SolarizeIcons.Exposure),
+        IconSubOption("contrast", "Contraste", SolarizeIcons.Contrast),
+        IconSubOption("highlights", "Realces", SolarizeIcons.Highlights),
+        IconSubOption("shadows", "Sombras", SolarizeIcons.Shadows),
+        IconSubOption("whites", "Brancos", SolarizeIcons.Whites),
+        IconSubOption("blacks", "Pretos", SolarizeIcons.Blacks),
+        IconSubOption("temperature", "Temperatura", SolarizeIcons.Temperature),
+        IconSubOption("tint", "Matiz", SolarizeIcons.Tint),
+        IconSubOption("vibrance", "Vibração", SolarizeIcons.Vibrance),
+        IconSubOption("saturation", "Saturação", SolarizeIcons.Saturation),
+        IconSubOption("clarity", "Claridade", SolarizeIcons.Clarity),
+        IconSubOption("vignette", "Vinheta", SolarizeIcons.Vignette),
+        IconSubOption("fade", "Desbotado", SolarizeIcons.Fade),
+        IconSubOption("hsl", "HSL", SolarizeIcons.Hsl, proInside = hslHasProInside),
+        IconSubOption("curve", "Curva", SolarizeIcons.Curve),
+        IconSubOption("levels", "Níveis", SolarizeIcons.Levels, adjustProLocked),
+        IconSubOption("balance", "Balanço", SolarizeIcons.Balance, adjustProLocked),
+        IconSubOption("rgb", "RGB", SolarizeIcons.Rgb),
+        IconSubOption("haze", "Névoa", SolarizeIcons.Haze, adjustProLocked),
+        IconSubOption("gamma", "Gama", SolarizeIcons.Gamma, adjustProLocked),
+        IconSubOption("hueShift", "Giro de cor", SolarizeIcons.HueShift, adjustProLocked),
+        IconSubOption("blur", "Desfoque", SolarizeIcons.Blur, blurSkinLocked),
+        IconSubOption("smooth", "Pele", SolarizeIcons.Smooth, blurSkinLocked)
     )
     val effectiveSub = if (options.any { it.id == selectedSub }) {
         selectedSub
@@ -905,7 +876,7 @@ internal fun BlendPanel(
             ) {
                 if (locked) {
                     Icon(
-                        imageVector = Icons.Filled.Star,
+                        imageVector = SolarizeIcons.ProSparkle,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp)
@@ -953,7 +924,7 @@ internal fun BlendPanel(
                     leadingIcon = if (locked) {
                         {
                             Icon(
-                                imageVector = Icons.Filled.Star,
+                                imageVector = SolarizeIcons.ProSparkle,
                                 contentDescription = "Pro",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)

@@ -48,7 +48,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -116,6 +115,7 @@ import app.lume.ui.editor.EditorTool
 import app.lume.ui.editor.FilterTab
 import app.lume.ui.editor.PendingEditorTarget
 import app.lume.imaging.BitmapLoader
+import app.lume.ui.editor.SolarizeIcons
 import app.lume.ui.components.PresetSwatch
 import app.lume.ui.components.SectionTitle
 import app.lume.ui.components.SupportingText
@@ -182,7 +182,7 @@ private fun HomeTopBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = Icons.Filled.Star,
+                    imageVector = SolarizeIcons.ProSparkle,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(14.dp)

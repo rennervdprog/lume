@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lume.core.ProPolicy
+import app.lume.ui.editor.SolarizeIcons
 import app.lume.ui.components.SectionTitle
 import app.lume.ui.components.ShowMessageAsSnackbar
 import app.lume.ui.components.SupportingText
@@ -90,7 +90,7 @@ fun PaywallScreen(
                     horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Star,
+                        imageVector = SolarizeIcons.ProSparkle,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary
                     )
