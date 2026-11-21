@@ -42,6 +42,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.lume.R
 import app.lume.ui.account.AccountScreen
 import app.lume.ui.account.AccountViewModel
 import app.lume.ui.components.ShowMessageAsSnackbar
