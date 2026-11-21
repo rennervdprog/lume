@@ -1,7 +1,6 @@
 package app.lume.ui.editor
 
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -587,12 +586,11 @@ object SolarizeIcons {
                 strokeLineJoin = StrokeJoin.Round
             )
             .addPath(
-                pathData = PathParser().parsePathString("M3.5,12 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0 Z").toNodes(),
+                pathData = PathParser().parsePathString("M20.5,12 A8.5,8.5 0 0 1 19.3612,16.25 M18.0104,18.0104 A8.5,8.5 0 0 1 14.2,20.2104 M12,20.5 A8.5,8.5 0 0 1 7.75,19.3612 M5.98959,18.0104 A8.5,8.5 0 0 1 3.78963,14.2 M3.5,12 A8.5,8.5 0 0 1 4.63878,7.75 M5.98959,5.98959 A8.5,8.5 0 0 1 9.80004,3.78963 M12,3.5 A8.5,8.5 0 0 1 16.25,4.63878 M18.0104,5.98959 A8.5,8.5 0 0 1 20.2104,9.80004").toNodes(),
                 stroke = SolidColor(Color.Black),
                 strokeLineWidth = 2f,
                 strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f)
+                strokeLineJoin = StrokeJoin.Round
             )
             .build()
     }
