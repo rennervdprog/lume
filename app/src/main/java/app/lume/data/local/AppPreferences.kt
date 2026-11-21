@@ -19,4 +19,10 @@ val Context.appDataStore: DataStore<Preferences> by preferencesDataStore(
 object PreferenceKeys {
     val GUEST_ID: Preferences.Key<String> = stringPreferencesKey("guest_id")
     val DEBUG_PRO: Preferences.Key<Boolean> = booleanPreferencesKey("debug_pro")
+    /** Dica do gesto segurar-pra-ver-original já foi exibida uma vez. */
+    val ORIGINAL_HINT_SHOWN: Preferences.Key<Boolean> =
+        booleanPreferencesKey("original_hint_shown")
+    /** Ids dos últimos presets usados, separados por vírgula (máx. 4). */
+    val RECENT_PRESET_IDS: Preferences.Key<String> =
+        stringPreferencesKey("recent_preset_ids")
 }

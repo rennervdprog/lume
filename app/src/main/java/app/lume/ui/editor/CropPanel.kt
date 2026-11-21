@@ -3,6 +3,8 @@ package app.lume.ui.editor
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,15 +18,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material.icons.filled.Flip
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -32,10 +37,17 @@ import app.lume.core.CropRatio
 import app.lume.core.Geometry
 import app.lume.core.formatDegrees
 import app.lume.ui.theme.LumeSpacing
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class CropTab {
     CROP, STRAIGHTEN, ROTATE
 }
+
+/** Segurar o botão de girar: espera antes de começar a repetir. */
+private const val ROTATE_HOLD_DELAY_MS = 300L
+
+/** Girar segurando: repete o passo pequeno neste intervalo. */
+private const val ROTATE_REPEAT_MS = 100L
 
 /**
  * Cortar (v4), com 3 abas de texto: Cortar (proporções + moldura
@@ -66,7 +78,6 @@ internal fun CropPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        PanelHeader(title = "Cortar")
         Row(
             horizontalArrangement = Arrangement.spacedBy(LumeSpacing.md)
         ) {
@@ -88,6 +99,9 @@ internal fun CropPanel(
         }
         when (cropTab) {
             CropTab.CROP -> {
+                val currentRatio = CropRatio.entries.firstOrNull {
+                    it.matches(geometry.crop, photoWidth, photoHeight)
+                } ?: CropRatio.FREE
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -95,10 +109,9 @@ internal fun CropPanel(
                     CropRatio.entries.forEach { ratio ->
                         RatioButton(
                             ratio = ratio,
-                            selected = ratio.matches(
-                                geometry.crop, photoWidth, photoHeight
-                            ),
-                            onClick = { onRatioSelect(ratio) },
+                            selected = ratio == currentRatio,
+                            currentRatio = currentRatio,
+                            onRatioSelect = onRatioSelect,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -133,12 +146,14 @@ internal fun CropPanel(
                     RotateAction(
                         label = "Direita 90°",
                         icon = Icons.AutoMirrored.Filled.RotateRight,
-                        onClick = { onRotate(90) }
+                        rotateStep = 90,
+                        onRotateStep = onRotate
                     )
                     RotateAction(
                         label = "Esquerda 90°",
                         icon = Icons.AutoMirrored.Filled.RotateLeft,
-                        onClick = { onRotate(-90) }
+                        rotateStep = -90,
+                        onRotateStep = onRotate
                     )
                     RotateAction(
                         label = "Espelhar",
@@ -148,9 +163,8 @@ internal fun CropPanel(
                     )
                     RotateAction(
                         label = "Inverter",
-                        icon = Icons.Filled.Flip,
+                        icon = Icons.Filled.SwapVert,
                         active = geometry.flipVertical,
-                        iconModifier = Modifier.graphicsLayer { rotationZ = 90f },
                         onClick = { onFlip(false) }
                     )
                 }
@@ -175,13 +189,23 @@ private fun ratioIconSize(aspect: Float?): Pair<Dp, Dp> {
     return width to height
 }
 
+/**
+ * Botão de proporção com espiar ao segurar: no toque, aplica a
+ * proporção na hora (a moldura anima com mola no overlay); se o
+ * dedo sair dos limites do botão antes de soltar, volta à proporção
+ * anterior. Toque rápido = down + up dentro = aplica — o mesmo
+ * resultado do clique que existia antes.
+ */
 @Composable
 private fun RatioButton(
     ratio: CropRatio,
     selected: Boolean,
-    onClick: () -> Unit,
+    currentRatio: CropRatio,
+    onRatioSelect: (CropRatio) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val latestRatio by rememberUpdatedState(currentRatio)
+    val latestOnRatioSelect by rememberUpdatedState(onRatioSelect)
     val (iconWidth, iconHeight) = ratioIconSize(ratio.aspect)
     val tint = if (selected) {
         MaterialTheme.colorScheme.onSurface
@@ -200,7 +224,27 @@ private fun RatioButton(
                     Modifier
                 }
             )
-            .clickable(onClick = onClick)
+            .pointerInput(ratio) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    val previous = latestRatio
+                    latestOnRatioSelect(ratio)
+                    var cancelled = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        change.consume()
+                        val inside = change.position.x in 0f..size.width.toFloat() &&
+                            change.position.y in 0f..size.height.toFloat()
+                        if (!inside) {
+                            cancelled = true
+                            break
+                        }
+                        if (!change.pressed) break
+                    }
+                    if (cancelled) latestOnRatioSelect(previous)
+                }
+            }
             .padding(vertical = 8.dp)
     ) {
         Box(
@@ -222,21 +266,65 @@ private fun RatioButton(
     }
 }
 
+/**
+ * Ação de girar/espelhar. Com [rotateStep] (90 ou -90), o toque
+ * rápido gira 90° de uma vez e segurar gira aos poucos: após
+ * [ROTATE_HOLD_DELAY_MS] repete o passo de 15° (mesmo sinal) a cada
+ * [ROTATE_REPEAT_MS] até soltar. Sem [rotateStep], é um clique
+ * simples (espelhos).
+ */
 @Composable
 private fun RotateAction(
     label: String,
     icon: ImageVector,
-    onClick: () -> Unit,
+    onClick: () -> Unit = {},
     active: Boolean = false,
     iconModifier: Modifier = Modifier,
+    rotateStep: Int? = null,
+    onRotateStep: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val latestOnClick by rememberUpdatedState(onClick)
+    val latestOnRotateStep by rememberUpdatedState(onRotateStep)
+    val pressModifier = if (rotateStep != null && onRotateStep != null) {
+        val step = rotateStep
+        Modifier.pointerInput(step) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                // Soltar antes do atraso = toque rápido: 90° de uma vez.
+                val quickTap = withTimeoutOrNull(ROTATE_HOLD_DELAY_MS) {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.changes.none { it.pressed }) break
+                    }
+                }
+                if (quickTap != null) {
+                    latestOnRotateStep?.invoke(if (step > 0) 90 else -90)
+                } else {
+                    // Segurando: repete o passo pequeno até soltar.
+                    val smallStep = if (step > 0) 15 else -15
+                    while (true) {
+                        val released = withTimeoutOrNull(ROTATE_REPEAT_MS) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                if (event.changes.none { it.pressed }) break
+                            }
+                        }
+                        if (released != null) break
+                        latestOnRotateStep?.invoke(smallStep)
+                    }
+                }
+            }
+        }
+    } else {
+        Modifier.clickable(onClick = { latestOnClick() })
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xxs),
         modifier = modifier
             .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
+            .then(pressModifier)
             .padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xs)
     ) {
         Icon(

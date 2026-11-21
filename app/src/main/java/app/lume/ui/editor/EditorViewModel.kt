@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.lume.core.CopiedEditStore
@@ -24,6 +25,8 @@ import app.lume.data.DraftThumbnails
 import app.lume.data.PresetRepository
 import app.lume.data.UserLut
 import app.lume.data.UserLutStore
+import app.lume.data.local.PreferenceKeys
+import app.lume.data.local.appDataStore
 import app.lume.data.pro.EntitlementRepository
 import app.lume.imaging.BitmapLoader
 import app.lume.imaging.GeometryTransform
@@ -39,6 +42,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -61,13 +65,21 @@ data class EditorUiState(
     val appliedPresetName: String? = null,
     val presetIntensity: Float = 1f,
     val histogram: List<Float> = emptyList(),
+    /** Histograma RGB (3 listas: R, G, B), calculado junto com [histogram]. */
+    val histogramRgb: List<List<Float>> = emptyList(),
     val isPro: Boolean = false,
     /** LUTs .cube importados pelo usuário (aba Meus LUTs). */
     val userLuts: List<UserLut> = emptyList(),
     /** A segunda foto da mistura foi escolhida (vive só na sessão). */
     val hasBlendPhoto: Boolean = false,
+    /** Miniatura da segunda foto da mistura (só na sessão). */
+    val blendPreview: ImageBitmap? = null,
     /** Cores da foto (Fase 1): extraídas da foto atual, no aparelho. */
-    val paletteColors: List<Int> = emptyList()
+    val paletteColors: List<Int> = emptyList(),
+    /** Ids dos últimos presets usados (máx. 4, o mais recente primeiro). */
+    val recentPresetIds: List<String> = emptyList(),
+    /** A dica do gesto segurar-pra-ver-original já foi exibida uma vez. */
+    val originalHintShown: Boolean = false
 )
 
 class EditorViewModel(
@@ -110,6 +122,17 @@ class EditorViewModel(
     private var panelBaseline: Pair<Recipe, Geometry>? = null
 
     /**
+     * Receita de prévia (hold-peek de preset/LUT e comparar com escopo
+     * de Níveis/Balanço/RGB): substitui a receita SÓ no render — o
+     * estado (sliders, histórico) continua mostrando a receita real.
+     * Vive só enquanto o dedo segura; qualquer draft/commit limpa.
+     */
+    private var compareOverride: Recipe? = null
+
+    /** Último LUT apagado + sua grade, para o "Desfazer" do snackbar. */
+    private var lastDeletedLut: Pair<UserLut, LutGrid>? = null
+
+    /**
      * Últimos 3 bitmaps renderizados. A tela pode estar mostrando o
      * atual ou o anterior (uma recomposição em voo pode ler o estado
      * antigo) — reciclar só o de três renders atrás é seguro. Reciclar
@@ -132,7 +155,69 @@ class EditorViewModel(
                 _uiState.update { it.copy(presets = presets) }
             }
         }
+        viewModelScope.launch {
+            appContext.appDataStore.data
+                .map { prefs -> prefs[PreferenceKeys.ORIGINAL_HINT_SHOWN] ?: false }
+                .collect { shown ->
+                    _uiState.update { it.copy(originalHintShown = shown) }
+                }
+        }
+        viewModelScope.launch {
+            appContext.appDataStore.data
+                .map { prefs ->
+                    prefs[PreferenceKeys.RECENT_PRESET_IDS].orEmpty()
+                        .split(",").filter { it.isNotBlank() }.take(4)
+                }
+                .collect { ids ->
+                    _uiState.update { it.copy(recentPresetIds = ids) }
+                }
+        }
         refreshUserLuts()
+    }
+
+    // ---- Prévia por segurar (peek) e comparar com escopo ----
+
+    /**
+     * Liga/desliga a receita de prévia e re-renderiza. null = volta à
+     * receita real. Usado pelo hold-peek de preset/LUT e pelo comparar
+     * com escopo (Níveis/Balanço/RGB).
+     */
+    fun setCompareOverride(recipe: Recipe?) {
+        compareOverride = recipe
+        refreshRender()
+    }
+
+    /** Hold-peek de preset: mostra base+preset na foto grande enquanto segura. */
+    fun peekPreset(preset: Preset?) {
+        compareOverride = preset?.let { history.current.interpolatedTo(it.recipe, 1f) }
+        refreshRender()
+    }
+
+    /** Hold-peek de LUT: mostra a receita atual com este LUT a 100%. */
+    fun peekLut(lutId: String?) {
+        compareOverride = lutId?.let { history.current.copy(lutId = it, lutIntensity = 1f) }
+        refreshRender()
+    }
+
+    private fun clearCompareOverride() {
+        compareOverride = null
+    }
+
+    /** A ferramenta atual mudou algo desde que foi aberta (para o X segurar 0,5s). */
+    fun hasPanelChanges(): Boolean {
+        val baseline = panelBaseline ?: return false
+        return baseline.first != history.current || baseline.second != currentGeometry
+    }
+
+    /** A dica do gesto segurar-pra-ver-original foi exibida: nunca mais. */
+    fun markOriginalHintShown() {
+        if (_uiState.value.originalHintShown) return
+        _uiState.update { it.copy(originalHintShown = true) }
+        viewModelScope.launch {
+            appContext.appDataStore.edit { prefs ->
+                prefs[PreferenceKeys.ORIGINAL_HINT_SHOWN] = true
+            }
+        }
     }
 
     // ---- LUTs ----
@@ -234,11 +319,26 @@ class EditorViewModel(
             applyLut(null)
         }
         viewModelScope.launch(Dispatchers.IO) {
+            val lut = _uiState.value.userLuts.firstOrNull { it.id == lutId }
+            val grid = lut?.let { UserLutStore.loadGrid(appContext, lutId) }
+            lastDeletedLut = if (lut != null && grid != null) lut to grid else null
             UserLutStore.delete(appContext, lutId)
             LutGrids.evict(lutId)
             refreshUserLuts()
         }
-        _uiState.update { it.copy(message = "LUT apagado.") }
+        // Sem message aqui: a tela mostra o snackbar com "Desfazer".
+    }
+
+    /** Desfaz o último apagar de LUT (re-salva o arquivo + a grade). */
+    fun undoDeleteUserLut() {
+        val (lut, grid) = lastDeletedLut ?: return
+        lastDeletedLut = null
+        viewModelScope.launch(Dispatchers.IO) {
+            UserLutStore.save(appContext, lut.id, lut.name, lut.fileName, lut.cubeSize, grid)
+            LutGrids.evict(lut.id)
+            refreshUserLuts()
+            _uiState.update { it.copy(message = "LUT restaurado.") }
+        }
     }
 
     private fun refreshUserLuts() {
@@ -381,7 +481,9 @@ class EditorViewModel(
             }
             blendBitmap?.recycle()
             blendBitmap = decoded
-            _uiState.update { it.copy(hasBlendPhoto = true) }
+            _uiState.update {
+                it.copy(hasBlendPhoto = true, blendPreview = decoded.asImageBitmap())
+            }
             if (history.current.blendMode == null) {
                 withContext(Dispatchers.Main) { applyBlendMode("multiply") }
             } else {
@@ -396,7 +498,7 @@ class EditorViewModel(
             applyBlendMode(null)
         }
         clearBlendBitmap()
-        _uiState.update { it.copy(hasBlendPhoto = false) }
+        _uiState.update { it.copy(hasBlendPhoto = false, blendPreview = null) }
     }
 
     private fun clearBlendBitmap() {
@@ -424,6 +526,7 @@ class EditorViewModel(
         currentGeometry = Geometry.IDENTITY
         cropPreviewMode = false
         panelBaseline = null
+        clearCompareOverride()
         _uiState.update {
             it.copy(
                 photoUri = uri,
@@ -438,6 +541,7 @@ class EditorViewModel(
                 appliedPresetName = null,
                 presetIntensity = 1f,
                 hasBlendPhoto = false,
+                blendPreview = null,
                 paletteColors = emptyList()
             )
         }
@@ -492,6 +596,7 @@ class EditorViewModel(
     fun updateRecipeDraft(recipe: Recipe) {
         history.preview(recipe)
         clearAppliedPresetTracking()
+        clearCompareOverride()
         _uiState.update { it.copy(recipe = history.current) }
         refreshRender()
     }
@@ -499,6 +604,7 @@ class EditorViewModel(
     /** Fim do gesto: confirma a edição no histórico e salva o rascunho. */
     fun commitRecipe() {
         history.commit(history.current)
+        clearCompareOverride()
         persistDraft()
         _uiState.update {
             it.copy(canUndo = history.canUndo, canRedo = history.canRedo)
@@ -509,6 +615,7 @@ class EditorViewModel(
     fun undo() {
         val recipe = history.undo() ?: return
         clearAppliedPresetTracking()
+        clearCompareOverride()
         persistDraft()
         _uiState.update {
             it.copy(
@@ -523,6 +630,7 @@ class EditorViewModel(
     fun redo() {
         val recipe = history.redo() ?: return
         clearAppliedPresetTracking()
+        clearCompareOverride()
         persistDraft()
         _uiState.update {
             it.copy(
@@ -537,6 +645,7 @@ class EditorViewModel(
     fun resetAdjustments() {
         history.commit(Recipe.IDENTITY)
         clearAppliedPresetTracking()
+        clearCompareOverride()
         currentGeometry = Geometry.IDENTITY
         clearBlendBitmap()
         persistDraft()
@@ -548,7 +657,8 @@ class EditorViewModel(
                 canRedo = history.canRedo,
                 appliedPresetName = null,
                 presetIntensity = 1f,
-                hasBlendPhoto = false
+                hasBlendPhoto = false,
+                blendPreview = null
             )
         }
         refreshRender()
@@ -559,6 +669,7 @@ class EditorViewModel(
     /** Atualiza a geometria e re-renderiza. Vale para arrasto e botão. */
     fun updateGeometry(geometry: Geometry) {
         currentGeometry = geometry.clamped()
+        clearCompareOverride()
         _uiState.update { it.copy(geometry = currentGeometry) }
         refreshRender()
     }
@@ -631,6 +742,7 @@ class EditorViewModel(
         if (baselineRecipe != history.current) {
             history.commit(baselineRecipe)
             clearAppliedPresetTracking()
+            clearCompareOverride()
             persistDraft()
         }
         currentGeometry = baselineGeometry
@@ -655,7 +767,9 @@ class EditorViewModel(
         appliedPreset = preset
         val blended = history.current.interpolatedTo(preset.recipe, 1f)
         history.commit(blended)
+        clearCompareOverride()
         persistDraft()
+        recordRecentPreset(preset)
         _uiState.update {
             it.copy(
                 recipe = blended,
@@ -666,6 +780,18 @@ class EditorViewModel(
             )
         }
         refreshRender()
+    }
+
+    /** Guarda o preset nos últimos usados (máx. 4) e persiste. */
+    private fun recordRecentPreset(preset: Preset) {
+        val ids = (listOf(preset.id) + _uiState.value.recentPresetIds)
+            .distinct().take(4)
+        _uiState.update { it.copy(recentPresetIds = ids) }
+        viewModelScope.launch {
+            appContext.appDataStore.edit { prefs ->
+                prefs[PreferenceKeys.RECENT_PRESET_IDS] = ids.joinToString(",")
+            }
+        }
     }
 
     /** Volta à receita de antes do preset (cartão "Original" da tira). */
@@ -840,7 +966,9 @@ class EditorViewModel(
      */
     private fun refreshRender() {
         val bitmap = previewBitmap ?: return
-        val recipe = history.current
+        // Prévia por segurar (peek) ou comparar com escopo: renderiza a
+        // receita de prévia, mas o estado continua com a receita real.
+        val recipe = compareOverride ?: history.current
         val effectiveGeometry = if (cropPreviewMode) {
             currentGeometry.withoutCrop()
         } else {
@@ -851,7 +979,8 @@ class EditorViewModel(
             _uiState.update { it.copy(editedPreview = bitmap.asImageBitmap()) }
             renderJob = viewModelScope.launch(Dispatchers.Default) {
                 val values = Histogram.compute(bitmap)
-                _uiState.update { it.copy(histogram = values) }
+                val rgbValues = Histogram.computeRgb(bitmap)
+                _uiState.update { it.copy(histogram = values, histogramRgb = rgbValues) }
             }
             return
         }
@@ -873,12 +1002,17 @@ class EditorViewModel(
                     base.recycle()
                 }
                 val values = Histogram.compute(final)
+                val rgbValues = Histogram.computeRgb(final)
                 renderedRing.addLast(final)
                 while (renderedRing.size > 3) {
                     renderedRing.removeFirst().recycle()
                 }
                 _uiState.update {
-                    it.copy(editedPreview = final.asImageBitmap(), histogram = values)
+                    it.copy(
+                        editedPreview = final.asImageBitmap(),
+                        histogram = values,
+                        histogramRgb = rgbValues
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e

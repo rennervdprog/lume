@@ -48,6 +48,47 @@ object Histogram {
         }
     }
 
+    /**
+     * Histograma RGB: 3 listas (R, G, B), um valor por balde, mesma
+     * amostragem do [compute]. Falha retorna 3 listas vazias.
+     */
+    fun computeRgb(edited: Bitmap, buckets: Int = BUCKETS): List<List<Float>> {
+        return try {
+            val scaled = scaleDown(edited)
+            val scaledIsCopy = scaled !== edited
+            val counts = Array(3) { IntArray(buckets) }
+            val pixels = IntArray(scaled.width * scaled.height)
+            scaled.getPixels(pixels, 0, scaled.width, 0, 0, scaled.width, scaled.height)
+            for (pixel in pixels) {
+                val channels = intArrayOf(
+                    (pixel shr 16) and 0xFF,
+                    (pixel shr 8) and 0xFF,
+                    pixel and 0xFF
+                )
+                for (c in 0..2) {
+                    val bucket = ((channels[c] / 255f) * buckets).toInt()
+                        .coerceIn(0, buckets - 1)
+                    counts[c][bucket]++
+                }
+            }
+            if (scaledIsCopy) {
+                scaled.recycle()
+            }
+            counts.map { channelCounts ->
+                val max = channelCounts.maxOrNull() ?: 0
+                if (max <= 0) {
+                    emptyList()
+                } else {
+                    channelCounts.map { count ->
+                        if (count == 0) 0f else (count.toFloat() / max).coerceAtLeast(0.03f)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            listOf(emptyList(), emptyList(), emptyList())
+        }
+    }
+
     private fun scaleDown(source: Bitmap): Bitmap {
         val maxSide = maxOf(source.width, source.height)
         if (maxSide <= SAMPLE_MAX_DIMENSION) return source

@@ -1,10 +1,17 @@
 package app.lume.ui.editor
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,12 +36,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Compare
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -41,11 +50,14 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -56,13 +68,21 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import android.graphics.Bitmap
 import app.lume.core.BuiltInLuts
+import app.lume.core.CurvePoint
 import app.lume.core.Feature
 import app.lume.core.HslChannel
 import app.lume.core.HslChannels
@@ -80,6 +100,7 @@ import app.lume.imaging.GlEngine
 import app.lume.imaging.LutGrids
 import app.lume.ui.components.PresetSwatch
 import app.lume.ui.theme.LumeSpacing
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -100,15 +121,42 @@ internal fun formatExposure(value: Float): String {
     return if (value > 0f) "+$text" else text
 }
 
+/** Ordem canônica dos grupos do Ajustar (parte 1, item 4). */
+internal val ADJUST_GROUP_ORDER: List<String> = listOf("Luz", "Cor", "Tom", "Efeito")
+
+/**
+ * Ordem canônica das 23 sub-ferramentas do Ajustar, grupo a grupo
+ * (Luz → Cor → Tom → Efeito): é ela que o gesto vertical na foto
+ * percorre (dentro do grupo, passando ao próximo no fim).
+ */
+internal val ADJUST_TOOL_ORDER: List<String> = listOf(
+    "exposure", "contrast", "highlights", "shadows", "whites", "blacks",
+    "temperature", "tint", "vibrance", "saturation", "hsl", "rgb", "balance",
+    "curve", "levels", "haze", "gamma", "hueShift",
+    "clarity", "vignette", "fade", "blur", "smooth"
+)
+
+/** Grupo de uma sub-ferramenta do Ajustar, pela ordem canônica. */
+internal fun adjustGroupOf(subId: String): String = when (subId) {
+    "exposure", "contrast", "highlights", "shadows", "whites", "blacks" -> "Luz"
+    "temperature", "tint", "vibrance", "saturation", "hsl", "rgb", "balance" -> "Cor"
+    "curve", "levels", "haze", "gamma", "hueShift" -> "Tom"
+    else -> "Efeito"
+}
+
 enum class EditorTool {
     CROP, FILTER, ADJUST, TEXT, BLEND, HISTORY
 }
 
-/** Trilho de ferramentas: ícone + rótulo, uma ferramenta por vez. */
+/** Trilho de ferramentas: ícone + rótulo, uma ferramenta por vez.
+ * Deslizar o dedo sobre o trilho troca de ferramenta sem soltar,
+ * com o destaque seguindo o dedo ([onDragSelect]); o toque simples
+ * continua selecionando ([onSelect]). */
 @Composable
 internal fun EditorToolRail(
     selected: EditorTool,
     onSelect: (EditorTool) -> Unit,
+    onDragSelect: ((EditorTool) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val tools = listOf(
@@ -119,10 +167,35 @@ internal fun EditorToolRail(
         Triple(EditorTool.BLEND, "Mistura", SolarizeIcons.Blend),
         Triple(EditorTool.HISTORY, "Histórico", SolarizeIcons.History)
     )
+    val latestOnDragSelect by rememberUpdatedState(onDragSelect)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xxs),
+            .padding(horizontal = LumeSpacing.xs, vertical = LumeSpacing.xxs)
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val slopChange = awaitTouchSlopOrCancellation(down.id) { _, _ -> }
+                    if (slopChange == null) return@awaitEachGesture
+                    val dx = slopChange.position.x - down.position.x
+                    val dy = slopChange.position.y - down.position.y
+                    if (abs(dx) <= abs(dy)) return@awaitEachGesture
+                    var lastIndex = ((down.position.x / size.width) * tools.size)
+                        .toInt().coerceIn(0, tools.size - 1)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        val index = ((change.position.x / size.width) * tools.size)
+                            .toInt().coerceIn(0, tools.size - 1)
+                        if (index != lastIndex) {
+                            lastIndex = index
+                            latestOnDragSelect?.invoke(tools[index].first)
+                        }
+                        change.consume()
+                    }
+                }
+            },
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         tools.forEach { (tool, label, icon) ->
@@ -169,20 +242,19 @@ internal fun EditorToolRail(
 }
 
 /**
- * Painel Ajustar (v4, sem seletor desde 0.14.1): todos os controles
- * de luz, cor e efeitos num só lugar, com trilho de ícones rolável.
- * O trilho lista SEMPRE as 23 ferramentas — nada some atrás de
- * modo. Só o que é Pro de verdade leva o selo ★: Níveis, Balanço,
- * Névoa, Gama, Giro de cor, Desfoque e Pele travam no toque
- * (paywall); o HSL leva o selo porque 4 canais dentro dele são
- * Pro, mas o toque abre a seção (os 4 canais grátis funcionam).
+ * Painel Ajustar (v4, sem seletor desde 0.14.1; compacto desde
+ * 0.15.6): sem título, sem histograma e sem paleta — o trilho de
+ * baixo já mostra onde você está. As 23 ferramentas viram 4 grupos
+ * (Luz/Cor/Tom/Efeito): o chip do grupo abre o grupo e o trilho
+ * mostra só ele. Só o que é Pro de verdade leva o selo ★: Níveis,
+ * Balanço, Névoa, Gama, Giro de cor, Desfoque e Pele travam no
+ * toque (paywall); o HSL leva o selo porque 4 canais dentro dele
+ * são Pro, mas o toque abre a seção (os 4 canais grátis funcionam).
  * RGB e Curva são grátis e não levam selo, como a tabela aprovada.
- * O histograma fica sempre visível no topo do painel.
  */
 @Composable
 internal fun AdjustPanel(
     recipe: Recipe,
-    histogram: List<Float>,
     isPro: Boolean,
     selectedSub: String,
     onSubSelect: (String) -> Unit,
@@ -194,12 +266,8 @@ internal fun AdjustPanel(
     onCommit: () -> Unit,
     onRequestPaywall: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
-    /** Cores da foto (Fase 1): vazia até a extração terminar. */
-    paletteColors: List<Int> = emptyList(),
-    /** Cor selecionada como cor do Texto (borda azul na faixa). */
-    selectedTextColor: Int? = null,
-    /** Toque na amostra: copiar o hex e virar a cor do Texto. */
-    onPaletteColorSelect: (Int) -> Unit = {},
+    /** Comparar com escopo (Níveis/Balanço/RGB): a receita com os 3 campos zerados, ou null ao soltar. */
+    onScopedCompare: (Recipe?) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Trilho único: as 23 ferramentas sobre a MESMA receita, sempre
@@ -246,18 +314,6 @@ internal fun AdjustPanel(
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        PanelHeader(
-            title = "Ajustar"
-        )
-        HistogramStrip(values = histogram)
-        // Cores da foto (Fase 1): sempre visível no Ajustar, como o
-        // histograma — some só enquanto a extração não terminou.
-        PhotoPaletteStrip(
-            title = "Cores da foto",
-            colors = paletteColors,
-            selectedColor = selectedTextColor,
-            onColorSelect = onPaletteColorSelect
-        )
         when (effectiveSub) {
             "hsl" -> HslSection(
                 recipe = recipe,
@@ -399,19 +455,19 @@ internal fun AdjustPanel(
                 recipe = recipe,
                 onDraft = onDraft,
                 onCommit = onCommit,
-                onCompareChange = onCompareChange
+                onScopedCompare = onScopedCompare
             )
             "balance" -> BalanceSection(
                 recipe = recipe,
                 onDraft = onDraft,
                 onCommit = onCommit,
-                onCompareChange = onCompareChange
+                onScopedCompare = onScopedCompare
             )
             "rgb" -> RgbSection(
                 recipe = recipe,
                 onDraft = onDraft,
                 onCommit = onCommit,
-                onCompareChange = onCompareChange
+                onScopedCompare = onScopedCompare
             )
             // Névoa: + desembaça, - adiciona névoa (ver o motor).
             "haze" -> SlimSliderRow(
@@ -462,8 +518,25 @@ internal fun AdjustPanel(
                 onCompareChange = onCompareChange
             )
         }
+        // Grupos (parte 1, item 4): 4 chips acima do trilho; o trilho
+        // mostra só as ferramentas do grupo aberto.
+        val currentGroup = adjustGroupOf(effectiveSub)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+        ) {
+            ADJUST_GROUP_ORDER.forEach { group ->
+                val firstId = options.first { adjustGroupOf(it.id) == group }.id
+                FilterChip(
+                    selected = group == currentGroup,
+                    onClick = { onSubSelect(firstId) },
+                    label = { Text(group) },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                )
+            }
+        }
         IconSubRail(
-            options = options,
+            options = options.filter { adjustGroupOf(it.id) == currentGroup },
             selectedId = effectiveSub,
             onSelect = onSubSelect,
             onLockedSelect = { onRequestPaywall() }
@@ -472,31 +545,95 @@ internal fun AdjustPanel(
 }
 
 /**
+ * Zerar + comparar de uma seção (Níveis/Balanço/RGB): dois botões
+ * circulares de 48dp no topo da seção. O comparar segura mostra só
+ * a seção zerada (comparação com escopo, via [onScopedCompare]).
+ */
+@Composable
+private fun SectionResetCompareRow(
+    onReset: () -> Unit,
+    onComparePress: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val latestOnComparePress by rememberUpdatedState(onComparePress)
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs, Alignment.End)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .clickable(onClick = onReset)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Refresh,
+                contentDescription = "Zerar seção",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onPress = {
+                            latestOnComparePress(true)
+                            try {
+                                awaitRelease()
+                            } finally {
+                                latestOnComparePress(false)
+                            }
+                        }
+                    )
+                }
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Compare,
+                contentDescription = "Segure para comparar a seção",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+    }
+}
+
+/**
  * Níveis (Ajustar Pro): ponto preto, meio-tom e ponto branco — o
  * mesmo trio do Lightroom. Preto e branco são 0..100 (janela que
  * corta as pontas); meio-tom é -100..100 (clareia/escurece o meio).
+ * Um só zerar e um só comparar para a seção inteira.
  */
 @Composable
 private fun LevelsSection(
     recipe: Recipe,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onCompareChange: (Boolean) -> Unit,
+    onScopedCompare: (Recipe?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val zeroed = recipe.copy(levelsBlack = 0f, levelsMid = 0f, levelsWhite = 0f)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        SectionResetCompareRow(
+            onReset = { onDraft(zeroed); onCommit() },
+            onComparePress = { pressing -> onScopedCompare(if (pressing) zeroed else null) }
+        )
         SlimSliderRow(
             caption = "Ponto preto",
             value = recipe.levelsBlack,
             valueRange = 0f..100f,
             onValueChange = { onDraft(recipe.copy(levelsBlack = it)) },
             onValueChangeFinished = onCommit,
-            formatValue = { "${it.roundToInt()}%" },
-            onReset = { onDraft(recipe.copy(levelsBlack = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            formatValue = { "${it.roundToInt()}%" }
         )
         SlimSliderRow(
             caption = "Meio-tom",
@@ -504,9 +641,7 @@ private fun LevelsSection(
             valueRange = -100f..100f,
             onValueChange = { onDraft(recipe.copy(levelsMid = it)) },
             onValueChangeFinished = onCommit,
-            formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(levelsMid = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            formatValue = ::formatSigned
         )
         SlimSliderRow(
             caption = "Ponto branco",
@@ -514,9 +649,7 @@ private fun LevelsSection(
             valueRange = 0f..100f,
             onValueChange = { onDraft(recipe.copy(levelsWhite = it)) },
             onValueChangeFinished = onCommit,
-            formatValue = { "${it.roundToInt()}%" },
-            onReset = { onDraft(recipe.copy(levelsWhite = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            formatValue = { "${it.roundToInt()}%" }
         )
     }
 }
@@ -524,20 +657,27 @@ private fun LevelsSection(
 /**
  * Balanço de cor por faixa (Ajustar Pro): quente (+) ou frio (-)
  * só nas sombras, só nos meios-tons ou só nos realces. A
- * luminosidade de cada faixa é preservada (ver o motor).
+ * luminosidade de cada faixa é preservada (ver o motor). Um só
+ * zerar e um só comparar para a seção inteira; os valores ficam
+ * alinhados numa coluna.
  */
 @Composable
 private fun BalanceSection(
     recipe: Recipe,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onCompareChange: (Boolean) -> Unit,
+    onScopedCompare: (Recipe?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val zeroed = recipe.copy(cbShadows = 0f, cbMidtones = 0f, cbHighlights = 0f)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        SectionResetCompareRow(
+            onReset = { onDraft(zeroed); onCommit() },
+            onComparePress = { pressing -> onScopedCompare(if (pressing) zeroed else null) }
+        )
         SlimSliderRow(
             caption = "Sombras",
             value = recipe.cbShadows,
@@ -545,8 +685,7 @@ private fun BalanceSection(
             onValueChange = { onDraft(recipe.copy(cbShadows = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(cbShadows = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            showValueColumn = true
         )
         SlimSliderRow(
             caption = "Meios-tons",
@@ -555,8 +694,7 @@ private fun BalanceSection(
             onValueChange = { onDraft(recipe.copy(cbMidtones = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(cbMidtones = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            showValueColumn = true
         )
         SlimSliderRow(
             caption = "Realces",
@@ -565,8 +703,7 @@ private fun BalanceSection(
             onValueChange = { onDraft(recipe.copy(cbHighlights = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(cbHighlights = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            showValueColumn = true
         )
     }
 }
@@ -574,20 +711,26 @@ private fun BalanceSection(
 /**
  * RGB (grátis, como a tabela aprovada): ganho por canal, 1 é
  * neutro. Vermelho +, verde +, azul + deixam a foto mais quente
- * ou mais fria sem tocar na temperatura global.
+ * ou mais fria sem tocar na temperatura global. Um só zerar e um
+ * só comparar para a seção inteira; cada trilho leva a cor do canal.
  */
 @Composable
 private fun RgbSection(
     recipe: Recipe,
     onDraft: (Recipe) -> Unit,
     onCommit: () -> Unit,
-    onCompareChange: (Boolean) -> Unit,
+    onScopedCompare: (Recipe?) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val zeroed = recipe.copy(rgbR = 0f, rgbG = 0f, rgbB = 0f)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
+        SectionResetCompareRow(
+            onReset = { onDraft(zeroed); onCommit() },
+            onComparePress = { pressing -> onScopedCompare(if (pressing) zeroed else null) }
+        )
         SlimSliderRow(
             caption = "Vermelho",
             value = recipe.rgbR,
@@ -595,8 +738,7 @@ private fun RgbSection(
             onValueChange = { onDraft(recipe.copy(rgbR = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(rgbR = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            fillColor = Color(0xFFF44336)
         )
         SlimSliderRow(
             caption = "Verde",
@@ -605,8 +747,7 @@ private fun RgbSection(
             onValueChange = { onDraft(recipe.copy(rgbG = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(rgbG = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            fillColor = Color(0xFF4CAF50)
         )
         SlimSliderRow(
             caption = "Azul",
@@ -615,17 +756,20 @@ private fun RgbSection(
             onValueChange = { onDraft(recipe.copy(rgbB = it)) },
             onValueChangeFinished = onCommit,
             formatValue = ::formatSigned,
-            onReset = { onDraft(recipe.copy(rgbB = 0f)); onCommit() },
-            onCompareChange = onCompareChange
+            fillColor = Color(0xFF2196F3)
         )
     }
 }
 
 /**
- * Curva de tons (modo Pro): pré-visualização da curva master + chips de
- * curvas prontas. Tocar num chip aplica a curva de uma vez (com
- * desfazer). O editor de pontos arrastáveis chega depois; as curvas
- * RGB ficam reservadas, sem controle falso.
+ * Curva de tons: a prévia vira o editor — tocar cria um ponto onde
+ * o dedo está, arrastar move colado no dedo, arrastar o ponto para
+ * fora da área remove (só pontos interiores, nunca menos de 2).
+ * Na soltura, a posição projetada (velocidade * 150ms) encaixa na
+ * grade de 0.25 com vibração curta. Os 4 chips de preset continuam
+ * como atalho. Os pontos são gerenciados manualmente: chamar
+ * [ToneCurve.clamped()] às cegas resetaria para a identidade com
+ * menos de 2 pontos.
  */
 @Composable
 internal fun CurveSection(
@@ -636,7 +780,16 @@ internal fun CurveSection(
 ) {
     val masterPoints = recipe.curve.master
     val selectedName = ToneCurve.presetNameFor(masterPoints)
-    val lut = remember(masterPoints) { ToneCurveLut.build(masterPoints) }
+    val pointsState = remember { mutableStateOf(masterPoints) }
+    val draggingIndexState = remember { mutableStateOf<Int?>(null) }
+    val points = pointsState.value
+    LaunchedEffect(masterPoints) {
+        if (draggingIndexState.value == null) pointsState.value = masterPoints
+    }
+    val latestRecipe by rememberUpdatedState(recipe)
+    val latestOnDraft by rememberUpdatedState(onDraft)
+    val latestOnCommit by rememberUpdatedState(onCommit)
+    val lut = remember(points) { ToneCurveLut.build(points) }
     val curveChips = listOf(
         "Linear" to ToneCurve.PRESET_LINEAR,
         "Contraste" to ToneCurve.PRESET_CONTRAST,
@@ -645,6 +798,7 @@ internal fun CurveSection(
     )
     val primary = MaterialTheme.colorScheme.primary
     val gridColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val haptic = LocalHapticFeedback.current
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
@@ -652,13 +806,161 @@ internal fun CurveSection(
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
+                .height(200.dp)
                 .clip(MaterialTheme.shapes.small)
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val paddingPx = 8.dp.toPx()
+                        val plotWidth = size.width - paddingPx * 2
+                        val plotHeight = size.height - paddingPx * 2
+                        fun toPoint(position: Offset): Offset {
+                            val x = ((position.x - paddingPx) / plotWidth).coerceIn(0f, 1f)
+                            val y = (1f - (position.y - paddingPx) / plotHeight).coerceIn(0f, 1f)
+                            return Offset(x, y)
+                        }
+                        fun toScreen(point: CurvePoint): Offset =
+                            Offset(
+                                paddingPx + point.x * plotWidth,
+                                paddingPx + (1f - point.y) * plotHeight
+                            )
+                        val touchPx = 32.dp.toPx()
+                        val current = pointsState.value
+                        val tap = toPoint(down.position)
+                        val nearestIndex = current.indices.minByOrNull { index ->
+                            (toScreen(current[index]) - down.position).getDistance()
+                        }
+                        val nearestDistance = nearestIndex?.let { index ->
+                            (toScreen(current[index]) - down.position).getDistance()
+                        } ?: Float.MAX_VALUE
+                        val dragIndex: Int
+                        if (nearestIndex != null && nearestDistance <= touchPx) {
+                            dragIndex = nearestIndex
+                        } else {
+                            val tapX = tap.x.coerceIn(0.02f, 0.98f)
+                            val insertAt = current.indexOfFirst { it.x > tapX }
+                                .takeIf { it >= 0 } ?: current.size
+                            val created = current.toMutableList().also {
+                                it.add(insertAt, CurvePoint(tapX, tap.y))
+                            }
+                            dragIndex = insertAt
+                            pointsState.value = created
+                            latestOnDraft(
+                                latestRecipe.copy(curve = latestRecipe.curve.copy(master = created))
+                            )
+                        }
+                        draggingIndexState.value = dragIndex
+                        val tracker = VelocityTracker()
+                        tracker.addPosition(down.uptimeMillis, down.position)
+                        var lastInside = tap
+                        var outside = false
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            tracker.addPosition(change.uptimeMillis, change.position)
+                            val position = change.position
+                            val isOutside = position.x < 0f || position.x > size.width ||
+                                position.y < 0f || position.y > size.height
+                            if (!change.pressed) {
+                                outside = isOutside
+                                break
+                            }
+                            change.consume()
+                            if (isOutside) {
+                                outside = true
+                            } else {
+                                outside = false
+                                lastInside = toPoint(position)
+                                val list = pointsState.value.toMutableList()
+                                if (dragIndex > list.lastIndex) break
+                                val moved = when (dragIndex) {
+                                    0 -> CurvePoint(0f, lastInside.y.coerceIn(0f, 1f))
+                                    list.lastIndex -> CurvePoint(1f, lastInside.y.coerceIn(0f, 1f))
+                                    else -> CurvePoint(
+                                        lastInside.x.coerceIn(
+                                            list[dragIndex - 1].x + 0.01f,
+                                            list[dragIndex + 1].x - 0.01f
+                                        ),
+                                        lastInside.y.coerceIn(0f, 1f)
+                                    )
+                                }
+                                if (moved != list[dragIndex]) {
+                                    list[dragIndex] = moved
+                                    pointsState.value = list
+                                    latestOnDraft(
+                                        latestRecipe.copy(curve = latestRecipe.curve.copy(master = list))
+                                    )
+                                }
+                            }
+                        }
+                        val finalList = pointsState.value.toMutableList()
+                        var snapped = false
+                        if (dragIndex <= finalList.lastIndex) {
+                            val interior = dragIndex > 0 && dragIndex < finalList.lastIndex
+                            if (outside && interior && finalList.size > 2) {
+                                finalList.removeAt(dragIndex)
+                            } else {
+                                val velocity = tracker.calculateVelocity()
+                                val projectedX = finalList[dragIndex].x + velocity.x * 0.15f / plotWidth
+                                val projectedY = finalList[dragIndex].y - velocity.y * 0.15f / plotHeight
+                                val gridLines = listOf(0f, 0.25f, 0.5f, 0.75f, 1f)
+                                fun snap(value: Float): Float {
+                                    val near = gridLines.minByOrNull { line ->
+                                        val d = line - value
+                                        if (d < 0f) -d else d
+                                    } ?: return value
+                                    val d = near - value
+                                    return if (d < 0.05f && d > -0.05f) near else value
+                                }
+                                val snappedX = snap(projectedX)
+                                val snappedY = snap(projectedY)
+                                val clampedX = when (dragIndex) {
+                                    0 -> 0f
+                                    finalList.lastIndex -> 1f
+                                    else -> snappedX.coerceIn(
+                                        finalList[dragIndex - 1].x + 0.01f,
+                                        finalList[dragIndex + 1].x - 0.01f
+                                    )
+                                }
+                                val snappedPoint = CurvePoint(clampedX, snappedY.coerceIn(0f, 1f))
+                                if (snappedPoint != finalList[dragIndex]) {
+                                    finalList[dragIndex] = snappedPoint
+                                    snapped = true
+                                }
+                            }
+                        }
+                        pointsState.value = finalList
+                        draggingIndexState.value = null
+                        latestOnDraft(
+                            latestRecipe.copy(curve = latestRecipe.curve.copy(master = finalList))
+                        )
+                        latestOnCommit()
+                        if (snapped) {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    }
+                }
         ) {
             val padding = 8.dp.toPx()
             val plotWidth = size.width - padding * 2
             val plotHeight = size.height - padding * 2
+            // Grade a cada 0.25 + diagonal.
+            for (step in 1..3) {
+                val fraction = step * 0.25f
+                drawLine(
+                    color = gridColor.copy(alpha = 0.25f),
+                    start = Offset(padding + fraction * plotWidth, padding),
+                    end = Offset(padding + fraction * plotWidth, size.height - padding),
+                    strokeWidth = 1.dp.toPx()
+                )
+                drawLine(
+                    color = gridColor.copy(alpha = 0.25f),
+                    start = Offset(padding, size.height - padding - fraction * plotHeight),
+                    end = Offset(size.width - padding, size.height - padding - fraction * plotHeight),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
             drawLine(
                 color = gridColor.copy(alpha = 0.4f),
                 start = Offset(padding, size.height - padding),
@@ -676,6 +978,25 @@ internal fun CurveSection(
                 color = primary,
                 style = Stroke(width = 2.dp.toPx())
             )
+            val draggingIndex = draggingIndexState.value
+            points.forEachIndexed { index, point ->
+                val center = Offset(
+                    padding + point.x * plotWidth,
+                    size.height - padding - point.y * plotHeight
+                )
+                val radius = if (index == draggingIndex) 9.dp.toPx() else 7.dp.toPx()
+                drawCircle(
+                    color = if (index == draggingIndex) primary else Color.White,
+                    radius = radius,
+                    center = center
+                )
+                drawCircle(
+                    color = primary,
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
         }
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -721,12 +1042,13 @@ private val HslDotColors: List<Color> = listOf(
 )
 
 /**
- * HSL por cor (v3): fileira de pontos (um por canal) + chips
- * Matiz/Saturação/Luminância + UM slider fino do atributo
- * selecionado. Os 4 primeiros canais são grátis; os outros 4
- * ficam com a cor cheia e o selo ★, e o toque abre o paywall
- * (regra em [ProPolicy]). O seletor "toque na foto" (Pro) chega
- * com o conta-gotas.
+ * HSL por cor (v3): fileira de pontos de 48dp (um por canal) +
+ * chips Matiz/Saturação/Luminância + UM slider fino do atributo
+ * selecionado. Arrastar o dedo na horizontal sobre a fileira troca
+ * de canal sem soltar (só canais livres — os Pro travados são
+ * ignorados no arrastar); o toque simples num canal Pro travado
+ * abre o paywall. Os 4 primeiros canais são grátis; os outros 4
+ * ficam com a cor cheia e o selo ★ (regra em [ProPolicy]).
  */
 @Composable
 internal fun HslSection(
@@ -749,47 +1071,89 @@ internal fun HslSection(
         list[index] = updated
         return recipe.copy(hsl = list)
     }
+    val latestChannel by rememberUpdatedState(selectedChannel)
+    val latestOnChannelSelect by rememberUpdatedState(onChannelSelect)
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier
+                .fillMaxWidth()
+                .pointerInput(isPro) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        var horizontal = false
+                        val slopChange = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                            val dx = change.position.x - down.position.x
+                            val dy = change.position.y - down.position.y
+                            horizontal = abs(dx) > abs(dy)
+                            if (horizontal) {
+                                val index = ((change.position.x / size.width) * 8)
+                                    .toInt().coerceIn(0, 7)
+                                if (index != latestChannel &&
+                                    ProPolicy.hslChannelUnlocked(index, isPro)
+                                ) {
+                                    latestOnChannelSelect(index)
+                                }
+                            }
+                        }
+                        if (slopChange == null || !horizontal) return@awaitEachGesture
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.firstOrNull() ?: break
+                            if (!change.pressed) break
+                            val index = ((change.position.x / size.width) * 8)
+                                .toInt().coerceIn(0, 7)
+                            if (index != latestChannel &&
+                                ProPolicy.hslChannelUnlocked(index, isPro)
+                            ) {
+                                latestOnChannelSelect(index)
+                            }
+                            change.consume()
+                        }
+                    }
+                },
+            horizontalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             channels.indices.forEach { index ->
                 val locked = !ProPolicy.hslChannelUnlocked(index, isPro)
                 val isSelected = index == selectedChannel
                 Box(
-                    contentAlignment = Alignment.TopEnd,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(HslDotColors[index])
-                        .then(
-                            if (isSelected) {
-                                Modifier.border(
-                                    2.dp,
-                                    MaterialTheme.colorScheme.primary,
-                                    CircleShape
-                                )
-                            } else {
-                                Modifier
-                            }
-                        )
-                        .clickable {
-                            if (locked) {
-                                onRequestPaywall()
-                            } else {
-                                onChannelSelect(index)
-                            }
-                        }
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    if (locked) {
-                        ProSealBadge(
-                            modifier = Modifier.offset(x = 4.dp, y = (-4).dp),
-                            contentDescription = "Canal Pro"
-                        )
+                    Box(
+                        contentAlignment = Alignment.TopEnd,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(HslDotColors[index])
+                            .then(
+                                if (isSelected) {
+                                    Modifier.border(
+                                        2.dp,
+                                        MaterialTheme.colorScheme.primary,
+                                        CircleShape
+                                    )
+                                } else {
+                                    Modifier
+                                }
+                            )
+                            .clickable {
+                                if (locked) {
+                                    onRequestPaywall()
+                                } else {
+                                    onChannelSelect(index)
+                                }
+                            }
+                    ) {
+                        if (locked) {
+                            ProSealBadge(
+                                modifier = Modifier.offset(x = 4.dp, y = (-4).dp),
+                                contentDescription = "Canal Pro"
+                            )
+                        }
                     }
                 }
             }
@@ -847,12 +1211,43 @@ internal fun HslSection(
 }
 
 /**
- * Ferramenta Mistura (0.14.0): dupla exposição — uma segunda foto
- * sobre a primeira, com 8 modos e opacidade. Recurso Pro: no plano
- * grátis tudo fica visível com o selo ★ e o toque abre o paywall
- * (o gesto do Lightroom). A segunda foto vive só na sessão: o
- * rascunho guarda o modo e a opacidade, não a foto.
+ * Ferramenta Mistura (0.14.0; cartão grande desde 0.15.6): dupla
+ * exposição — uma segunda foto sobre a primeira, com 8 modos e
+ * opacidade. Recurso Pro: no plano grátis tudo fica visível com o
+ * selo ★ e o toque abre o paywall (o gesto do Lightroom). A segunda
+ * foto vive só na sessão: o rascunho guarda o modo e a opacidade,
+ * não a foto. Cada modo mostra a mistura de verdade numa miniatura
+ * ao vivo; sem a segunda foto, os modos ficam desativados.
  */
+@Composable
+private fun rememberBlendThumb(
+    source: ImageBitmap?,
+    blend: ImageBitmap?,
+    modeId: String
+): ImageBitmap? {
+    var thumb by remember(source, blend, modeId) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(source, blend, modeId) {
+        thumb = null
+        val src = source?.asAndroidBitmap() ?: return@LaunchedEffect
+        val blendBitmap = blend?.asAndroidBitmap() ?: return@LaunchedEffect
+        val rendered = withContext(Dispatchers.Default) {
+            GlEngine.render(
+                src,
+                Recipe(blendMode = modeId, blendOpacity = 1f),
+                null,
+                blendBitmap = blendBitmap
+            )
+        }
+        val base = rendered ?: src
+        val scaled = downscaleThumb(base, 144)
+        if (rendered != null && scaled !== rendered) {
+            rendered.recycle()
+        }
+        thumb = scaled.asImageBitmap()
+    }
+    return thumb
+}
+
 @Composable
 internal fun BlendPanel(
     recipe: Recipe,
@@ -865,107 +1260,164 @@ internal fun BlendPanel(
     onBlendOpacityFinished: () -> Unit,
     onRequestPaywall: () -> Unit,
     onCompareChange: (Boolean) -> Unit,
+    preview: ImageBitmap? = null,
+    blendPreview: ImageBitmap? = null,
     modifier: Modifier = Modifier
 ) {
     val locked = !ProPolicy.isUnlocked(Feature.BLEND_MODES, isPro)
+    val pulseScale = remember { Animatable(1f) }
+    if (!hasBlendPhoto) {
+        LaunchedEffect(Unit) {
+            pulseScale.animateTo(1.05f, animationSpec = tween(durationMillis = 300))
+            pulseScale.animateTo(1f, animationSpec = tween(durationMillis = 300))
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = LumeSpacing.md),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        PanelHeader(title = "Mistura")
         Text(
             text = "Uma segunda foto sobre a primeira. Escolha a foto, " +
                 "o modo e a opacidade.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs),
-            verticalAlignment = Alignment.CenterVertically
+        // Cartão da segunda foto: o conteúdo é o botão. Sem foto,
+        // pulsa uma vez ao abrir para apontar o próximo passo.
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .graphicsLayer {
+                    scaleX = pulseScale.value
+                    scaleY = pulseScale.value
+                }
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .clickable { if (locked) onRequestPaywall() else onPickBlendPhoto() }
         ) {
-            OutlinedButton(
-                onClick = { if (locked) onRequestPaywall() else onPickBlendPhoto() },
-                modifier = Modifier.height(36.dp)
-            ) {
-                if (locked) {
-                    Icon(
-                        imageVector = SolarizeIcons.ProSparkle,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp)
+            if (blendPreview != null) {
+                Image(
+                    bitmap = blendPreview,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.35f))
+                ) {
+                    Text(
+                        text = "Trocar segunda foto",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White
                     )
                 }
-                Text(
-                    text = if (hasBlendPhoto) {
-                        "Trocar segunda foto"
-                    } else {
-                        "Escolher segunda foto"
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(start = if (locked) 6.dp else 0.dp)
-                )
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (locked) {
+                        Icon(
+                            imageVector = SolarizeIcons.ProSparkle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Text(
+                        text = "Escolher segunda foto",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
             }
-            if (hasBlendPhoto) {
+        }
+        if (hasBlendPhoto) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
                 TextButton(onClick = onClearBlendPhoto) {
                     Text("Remover")
                 }
             }
         }
-        // Modos: pílulas roláveis; a selecionada é a do modo ativo.
+        // Modos: cada um mostra a mistura de verdade numa miniatura
+        // ao vivo; sem a segunda foto, ficam desativados — nunca um
+        // toque morto.
         LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs),
+            horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm),
             contentPadding = PaddingValues(vertical = 2.dp)
         ) {
             item {
-                FilterChip(
+                LutThumbSquare(
+                    label = "Sem mistura",
                     selected = recipe.blendMode == null,
-                    onClick = { onApplyBlendMode(null) },
-                    label = { Text("Sem mistura") }
-                )
+                    enabled = hasBlendPhoto,
+                    onClick = { onApplyBlendMode(null) }
+                ) {
+                    if (preview != null) {
+                        Image(
+                            bitmap = preview,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
             items(items = BlendMode.entries, key = { it.id }) { mode ->
-                FilterChip(
+                val thumb = rememberBlendThumb(preview, blendPreview, mode.id)
+                LutThumbSquare(
+                    label = mode.label,
                     selected = recipe.blendMode == mode.id,
+                    sealed = locked,
+                    enabled = hasBlendPhoto,
                     onClick = {
                         if (locked) {
                             onRequestPaywall()
                         } else {
                             onApplyBlendMode(mode.id)
                         }
-                    },
-                    label = { Text(mode.label) },
-                    leadingIcon = if (locked) {
-                        {
-                            Icon(
-                                imageVector = SolarizeIcons.ProSparkle,
-                                contentDescription = "Pro",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    } else {
-                        null
                     }
-                )
+                ) {
+                    val shown = thumb ?: preview
+                    if (shown != null) {
+                        Image(
+                            bitmap = shown,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
             }
         }
-        if (recipe.blendMode != null) {
-            SlimSliderRow(
-                caption = "Opacidade",
-                value = recipe.blendOpacity * 100f,
-                valueRange = 0f..100f,
-                onValueChange = { onBlendOpacityChange(it / 100f) },
-                onValueChangeFinished = onBlendOpacityFinished,
-                formatValue = { "${it.roundToInt()}%" },
-                onReset = {
-                    onBlendOpacityChange(1f)
-                    onBlendOpacityFinished()
-                },
-                onCompareChange = onCompareChange
-            )
-        }
+        // Opacidade sempre visível; desativada sem modo aplicado.
+        SlimSliderRow(
+            caption = "Opacidade",
+            value = if (recipe.blendMode != null) recipe.blendOpacity * 100f else 100f,
+            valueRange = 0f..100f,
+            onValueChange = { onBlendOpacityChange(it / 100f) },
+            onValueChangeFinished = onBlendOpacityFinished,
+            formatValue = { "${it.roundToInt()}%" },
+            onReset = {
+                onBlendOpacityChange(1f)
+                onBlendOpacityFinished()
+            },
+            onCompareChange = onCompareChange,
+            enabled = recipe.blendMode != null,
+            onDoubleTap = {
+                onBlendOpacityChange(1f)
+                onBlendOpacityFinished()
+            }
+        )
         if (!hasBlendPhoto) {
             Text(
                 text = "Sem a segunda foto, o modo não aparece na foto — " +
@@ -974,6 +1426,85 @@ internal fun BlendPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+/**
+ * Uma linha do Histórico: a linha inteira é o botão (toque limpa o
+ * passo) e deslizar para o lado remove o passo. O deslize só consome
+ * o movimento predominantemente horizontal, para não bloquear o
+ * scroll vertical da lista; na soltura, a projeção (velocidade *
+ * 150ms) decide: passou de 35% da largura, a linha sai com mola e
+ * o passo é limpo; senão, volta a 0 com mola.
+ */
+@Composable
+private fun HistoryStepRow(
+    label: String,
+    value: String,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    var rowWidthPx by remember { mutableIntStateOf(0) }
+    val latestOnClear by rememberUpdatedState(onClear)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .onSizeChanged { rowWidthPx = it.width }
+            .offset { IntOffset(offset.value.x.roundToInt(), 0) }
+            .heightIn(min = 48.dp)
+            .clip(MaterialTheme.shapes.small)
+            .clickable { latestOnClear() }
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val tracker = VelocityTracker()
+                    tracker.addPosition(down.uptimeMillis, down.position)
+                    var horizontal = false
+                    val slopChange = awaitTouchSlopOrCancellation(down.id) { change, _ ->
+                        val dx = change.position.x - down.position.x
+                        val dy = change.position.y - down.position.y
+                        horizontal = abs(dx) > abs(dy)
+                        if (horizontal) change.consume()
+                    }
+                    if (slopChange == null || !horizontal) return@awaitEachGesture
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        tracker.addPosition(change.uptimeMillis, change.position)
+                        change.consume()
+                        offset.snapTo(Offset(change.position.x - down.position.x, 0f))
+                    }
+                    val velocity = tracker.calculateVelocity().x
+                    val projected = offset.value.x + velocity * 0.15f
+                    val threshold = rowWidthPx * 0.35f
+                    if (rowWidthPx > 0 && abs(projected) > threshold) {
+                        val target = if (projected > 0f) {
+                            rowWidthPx.toFloat()
+                        } else {
+                            -rowWidthPx.toFloat()
+                        }
+                        offset.animateTo(Offset(target, 0f), animationSpec = spring())
+                        latestOnClear()
+                    } else {
+                        offset.animateTo(Offset.Zero, animationSpec = spring())
+                    }
+                }
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -1194,16 +1725,26 @@ internal fun HistoryPanel(
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
         val hasGeometry = !geometry.isIdentity()
-        PanelHeader(
-            title = "Histórico",
-            trailing = {
-                if (steps.isNotEmpty() || hasGeometry) {
-                    TextButton(onClick = onReset) {
-                        Text("Limpar tudo")
-                    }
+        // "Limpar tudo" no topo, alinhado à direita, só com passos:
+        // segurar 500ms confirma (o gesto destrutivo custa mais que
+        // o toque); sem passos, o toque confirma direto.
+        if (steps.isNotEmpty() || hasGeometry) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = {},
+                    modifier = Modifier.holdToConfirm(
+                        durationMs = 1000L,
+                        requireHold = steps.isNotEmpty(),
+                        onConfirm = onReset
+                    )
+                ) {
+                    Text("Limpar tudo")
                 }
             }
-        )
+        }
         if (steps.isEmpty() && !hasGeometry) {
             Text(
                 text = "Nenhuma edição ainda. Mexa num controle ou aplique " +
@@ -1227,60 +1768,24 @@ internal fun HistoryPanel(
                 val (rotatedWidth, rotatedHeight) = geometry.rotatedSize(
                     photoWidth, photoHeight
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-                ) {
-                    Text(
-                        text = "Geometria",
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = geometry.summary(rotatedWidth, rotatedHeight),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    IconButton(onClick = onClearGeometry) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "Remover geometria"
-                        )
-                    }
-                }
+                HistoryStepRow(
+                    label = "Geometria",
+                    value = geometry.summary(rotatedWidth, rotatedHeight),
+                    onClear = onClearGeometry
+                )
             }
             steps.forEach { (label, value, cleared) ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = value,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    IconButton(
-                        onClick = {
-                            if (cleared == null) {
-                                onClearPreset()
-                            } else {
-                                onClearField(cleared)
-                            }
+                HistoryStepRow(
+                    label = label,
+                    value = value,
+                    onClear = {
+                        if (cleared == null) {
+                            onClearPreset()
+                        } else {
+                            onClearField(cleared)
                         }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Close,
-                            contentDescription = "Remover $label"
-                        )
                     }
-                }
+                )
             }
             }
             OutlinedButton(onClick = onCopyEdit) {
@@ -1329,6 +1834,11 @@ internal fun FilterPanel(
     onArtisticIntensityFinished: () -> Unit = {},
     onRequestPaywall: () -> Unit = {},
     initialTab: FilterTab = FilterTab.All,
+    recentPresets: List<Preset> = emptyList(),
+    onPeekPreset: (Preset, Boolean) -> Unit = { _, _ -> },
+    onPeekLut: (String?, Boolean) -> Unit = { _, _ -> },
+    scrollToPresetName: String? = null,
+    shuffleNonce: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val appliedPreset = presets.firstOrNull { it.name == appliedPresetName }
@@ -1344,10 +1854,6 @@ internal fun FilterPanel(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)
     ) {
-        PanelHeader(
-            title = "Filtro",
-            modifier = Modifier.padding(horizontal = LumeSpacing.md)
-        )
         // Categorias: texto puro com traço azul na selecionada, sem
         // pílulas — a fileira nunca muda de altura nem pula.
         LazyRow(
@@ -1390,12 +1896,41 @@ internal fun FilterPanel(
                 )
             }
         }
+        // Recentes (parte 2): os últimos presets usados, só nas abas
+        // de presets — mais rápido que rolar a tira toda vez.
+        if ((selectedTab is FilterTab.All || selectedTab is FilterTab.Collection) &&
+            recentPresets.isNotEmpty()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(LumeSpacing.xxs)) {
+                Text(
+                    text = "Recentes",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(horizontal = LumeSpacing.md)
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = LumeSpacing.md),
+                    horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
+                ) {
+                    items(items = recentPresets, key = { it.id }) { preset ->
+                        PresetThumbItem(
+                            preset = preset,
+                            preview = preview,
+                            appliedPresetName = appliedPresetName,
+                            onApplyPreset = onApplyPreset,
+                            onClearPreset = onClearPreset,
+                            onPeekPreset = onPeekPreset
+                        )
+                    }
+                }
+            }
+        }
         when (selectedTab) {
             is FilterTab.Luts -> LutFilmstrip(
                 preview = preview,
                 selectedLutId = selectedLutId,
                 onApplyLut = onApplyLut,
-                onImportLutClick = onImportLutClick
+                onImportLutClick = onImportLutClick,
+                onPeekLut = onPeekLut
             )
             is FilterTab.MyLuts -> MyLutFilmstrip(
                 preview = preview,
@@ -1403,7 +1938,8 @@ internal fun FilterPanel(
                 selectedLutId = selectedLutId,
                 onApplyLut = onApplyLut,
                 onImportLutClick = onImportLutClick,
-                onDeleteLut = onDeleteLut
+                onDeleteLut = onDeleteLut,
+                onPeekLut = onPeekLut
             )
             is FilterTab.Effects -> EffectsFilmstrip(
                 preview = preview,
@@ -1417,7 +1953,10 @@ internal fun FilterPanel(
                 preview = preview,
                 appliedPresetName = appliedPresetName,
                 onApplyPreset = onApplyPreset,
-                onClearPreset = onClearPreset
+                onClearPreset = onClearPreset,
+                onPeekPreset = onPeekPreset,
+                scrollToPresetName = scrollToPresetName,
+                shuffleNonce = shuffleNonce
             )
         }
         // Ações na própria linha, sempre no mesmo lugar: o QR fica
@@ -1431,7 +1970,7 @@ internal fun FilterPanel(
             OutlinedButton(
                 onClick = onShuffleClick,
                 contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.height(36.dp)
+                modifier = Modifier.height(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Filled.Shuffle,
@@ -1449,7 +1988,7 @@ internal fun FilterPanel(
                 onClick = { appliedPreset?.let(onSharePresetClick) },
                 enabled = appliedPreset != null,
                 contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.height(36.dp)
+                modifier = Modifier.height(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Filled.QrCode2,
@@ -1466,7 +2005,7 @@ internal fun FilterPanel(
             OutlinedButton(
                 onClick = onSavePresetClick,
                 contentPadding = PaddingValues(horizontal = 12.dp),
-                modifier = Modifier.height(36.dp)
+                modifier = Modifier.height(48.dp)
             ) {
                 Icon(
                     imageVector = Icons.Filled.Save,
@@ -1481,45 +2020,54 @@ internal fun FilterPanel(
                 )
             }
         }
-        if (appliedPreset != null) {
-            SlimSliderRow(
-                caption = "Intensidade",
-                value = presetIntensity * 100f,
-                valueRange = 0f..100f,
-                onValueChange = { onIntensityChange(it / 100f) },
-                onValueChangeFinished = onIntensityFinished,
-                formatValue = { "${it.roundToInt()}%" },
-                onReset = {
-                    onIntensityChange(1f)
-                    onIntensityFinished()
-                },
-                onCompareChange = onCompareChange,
-                modifier = Modifier.padding(horizontal = LumeSpacing.md)
-            )
-        }
-        if (selectedLutId != null) {
-            SlimSliderRow(
-                caption = "Intensidade do LUT",
-                value = lutIntensity * 100f,
-                valueRange = 0f..100f,
-                onValueChange = { onLutIntensityChange(it / 100f) },
-                onValueChangeFinished = onLutIntensityFinished,
-                formatValue = { "${it.roundToInt()}%" },
-                onReset = {
-                    onLutIntensityChange(1f)
-                    onLutIntensityFinished()
-                },
-                onCompareChange = onCompareChange,
-                modifier = Modifier.padding(horizontal = LumeSpacing.md)
-            )
-        }
+        // Intensidade sempre visível; desativada sem preset aplicado.
+        // Duplo toque volta a 100%.
+        SlimSliderRow(
+            caption = "Intensidade",
+            value = if (appliedPreset != null) presetIntensity * 100f else 100f,
+            valueRange = 0f..100f,
+            onValueChange = { onIntensityChange(it / 100f) },
+            onValueChangeFinished = onIntensityFinished,
+            formatValue = { "${it.roundToInt()}%" },
+            onReset = {
+                onIntensityChange(1f)
+                onIntensityFinished()
+            },
+            onCompareChange = onCompareChange,
+            enabled = appliedPreset != null,
+            onDoubleTap = {
+                onIntensityChange(1f)
+                onIntensityFinished()
+            },
+            modifier = Modifier.padding(horizontal = LumeSpacing.md)
+        )
+        SlimSliderRow(
+            caption = "Intensidade do LUT",
+            value = if (selectedLutId != null) lutIntensity * 100f else 100f,
+            valueRange = 0f..100f,
+            onValueChange = { onLutIntensityChange(it / 100f) },
+            onValueChangeFinished = onLutIntensityFinished,
+            formatValue = { "${it.roundToInt()}%" },
+            onReset = {
+                onLutIntensityChange(1f)
+                onLutIntensityFinished()
+            },
+            onCompareChange = onCompareChange,
+            enabled = selectedLutId != null,
+            onDoubleTap = {
+                onLutIntensityChange(1f)
+                onLutIntensityFinished()
+            },
+            modifier = Modifier.padding(horizontal = LumeSpacing.md)
+        )
         // Intensidade do efeito artístico (o Esboço não tem
-        // intensidade — liga/desliga, sem slider).
+        // intensidade — liga/desliga, sem slider): sempre visível,
+        // desativada sem efeito aplicado.
         val selectedEffect = ArtisticEffect.fromId(selectedArtisticId)
-        if (selectedEffect != null && selectedEffect.hasIntensity) {
+        if (selectedEffect == null || selectedEffect.hasIntensity) {
             SlimSliderRow(
                 caption = "Intensidade do efeito",
-                value = artisticIntensity * 100f,
+                value = if (selectedEffect != null) artisticIntensity * 100f else 100f,
                 valueRange = 0f..100f,
                 onValueChange = { onArtisticIntensityChange(it / 100f) },
                 onValueChangeFinished = onArtisticIntensityFinished,
@@ -1529,22 +2077,37 @@ internal fun FilterPanel(
                     onArtisticIntensityFinished()
                 },
                 onCompareChange = onCompareChange,
+                enabled = selectedEffect != null,
+                onDoubleTap = {
+                    onArtisticIntensityChange(1f)
+                    onArtisticIntensityFinished()
+                },
                 modifier = Modifier.padding(horizontal = LumeSpacing.md)
             )
         }
     }
 }
 
-/** Tira de presets (aba Todos ou uma coleção): código original do painel. */
+/** Tira de presets (aba Todos ou uma coleção): miniaturas do motor. */
 @Composable
 private fun PresetFilmstrip(
     presets: List<Preset>,
     preview: ImageBitmap?,
     appliedPresetName: String?,
     onApplyPreset: (Preset) -> Unit,
-    onClearPreset: () -> Unit
+    onClearPreset: () -> Unit,
+    onPeekPreset: (Preset, Boolean) -> Unit = { _, _ -> },
+    scrollToPresetName: String? = null,
+    shuffleNonce: Int = 0
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(scrollToPresetName, shuffleNonce) {
+        val name = scrollToPresetName ?: return@LaunchedEffect
+        val index = presets.indexOfFirst { it.name == name }
+        if (index >= 0) listState.animateScrollToItem(index + 1)
+    }
     LazyRow(
+        state = listState,
         contentPadding = PaddingValues(horizontal = LumeSpacing.md),
         horizontalArrangement = Arrangement.spacedBy(LumeSpacing.sm)
     ) {
@@ -1565,38 +2128,93 @@ private fun PresetFilmstrip(
             }
         }
         items(items = presets, key = { it.id }) { preset ->
-            val selected = preset.name == appliedPresetName
-            // Miniatura rápida pela matriz (aproximação v1): HSL,
-            // curva e efeitos do preset só aparecem na foto grande
-            // e na exportação, que passam pelo motor. A tira vai
-            // para o motor quando presets v2 virarem o caso comum.
-            val filter = remember(preset.recipe) {
-                ColorFilter.colorMatrix(
-                    ColorMatrix(RecipeColorMatrix.values(preset.recipe))
-                )
-            }
-            PresetThumbSquare(
-                label = preset.name,
-                selected = selected,
-                onClick = { onApplyPreset(preset) }
-            ) {
-                if (preview != null) {
-                    Image(
-                        bitmap = preview,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        colorFilter = filter,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    PresetSwatch(
-                        preset = preset,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
+            PresetThumbItem(
+                preset = preset,
+                preview = preview,
+                appliedPresetName = appliedPresetName,
+                onApplyPreset = onApplyPreset,
+                onClearPreset = onClearPreset,
+                onPeekPreset = onPeekPreset
+            )
         }
     }
+}
+
+/** Uma miniatura de preset (tira + Recentes): o mesmo gesto nos dois lugares. */
+@Composable
+private fun PresetThumbItem(
+    preset: Preset,
+    preview: ImageBitmap?,
+    appliedPresetName: String?,
+    onApplyPreset: (Preset) -> Unit,
+    onClearPreset: () -> Unit,
+    onPeekPreset: (Preset, Boolean) -> Unit
+) {
+    val selected = preset.name == appliedPresetName
+    val engineThumb = rememberPresetThumb(preview, preset)
+    // Reserva (só quando o motor não entregou): a aproximação por
+    // matriz de antes.
+    val filter = remember(preset.recipe) {
+        ColorFilter.colorMatrix(
+            ColorMatrix(RecipeColorMatrix.values(preset.recipe))
+        )
+    }
+    PresetThumbSquare(
+        label = preset.name,
+        selected = selected,
+        onClick = { if (selected) onClearPreset() else onApplyPreset(preset) },
+        onPeek = { peeking -> onPeekPreset(preset, peeking) }
+    ) {
+        if (engineThumb != null) {
+            Image(
+                bitmap = engineThumb,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (preview != null) {
+            Image(
+                bitmap = preview,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                colorFilter = filter,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            PresetSwatch(
+                preset = preset,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/**
+ * Miniatura de um preset sobre a foto aberta, renderizada pelo motor
+ * (a matriz antiga mentia: HSL, curva e efeito do preset não
+ * apareciam nela). Sem foto aberta não há o que renderizar (null) —
+ * a tira cai para a matriz/PresetSwatch. Se o motor falhar, a tira
+ * também cai para a matriz (nunca um cartão vazio).
+ */
+@Composable
+private fun rememberPresetThumb(source: ImageBitmap?, preset: Preset): ImageBitmap? {
+    val context = LocalContext.current
+    var thumb by remember(source, preset) { mutableStateOf<ImageBitmap?>(null) }
+    LaunchedEffect(source, preset) {
+        thumb = null
+        val src = source?.asAndroidBitmap() ?: return@LaunchedEffect
+        val rendered = withContext(Dispatchers.Default) {
+            val lutGrid = preset.recipe.lutId?.let { LutGrids.bitmapFor(context, it) }
+            GlEngine.render(src, preset.recipe, lutGrid)
+        }
+        val base = rendered ?: src
+        val scaled = downscaleThumb(base, 144)
+        if (rendered != null && scaled !== rendered) {
+            rendered.recycle()
+        }
+        thumb = scaled.asImageBitmap()
+    }
+    return thumb
 }
 
 /** Tira da aba LUTs: "Sem LUT" + os 6 LUTs próprios do Lume. */
@@ -1605,7 +2223,8 @@ private fun LutFilmstrip(
     preview: ImageBitmap?,
     selectedLutId: String?,
     onApplyLut: (String?) -> Unit,
-    onImportLutClick: () -> Unit
+    onImportLutClick: () -> Unit,
+    onPeekLut: (String?, Boolean) -> Unit = { _, _ -> }
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = LumeSpacing.md),
@@ -1639,10 +2258,12 @@ private fun LutFilmstrip(
         }
         items(items = BuiltInLuts.all, key = { it.id }) { lut ->
             val thumb = rememberLutThumb(preview, lut.id)
+            val selected = lut.id == selectedLutId
             LutThumbSquare(
                 label = lut.name,
-                selected = lut.id == selectedLutId,
-                onClick = { onApplyLut(lut.id) }
+                selected = selected,
+                onClick = { if (selected) onApplyLut(null) else onApplyLut(lut.id) },
+                onPeek = { peeking -> onPeekLut(lut.id, peeking) }
             ) {
                 if (thumb != null) {
                     Image(
@@ -1665,7 +2286,8 @@ private fun MyLutFilmstrip(
     selectedLutId: String?,
     onApplyLut: (String?) -> Unit,
     onImportLutClick: () -> Unit,
-    onDeleteLut: (String) -> Unit
+    onDeleteLut: (String) -> Unit,
+    onPeekLut: (String?, Boolean) -> Unit = { _, _ -> }
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(LumeSpacing.xs)) {
         LazyRow(
@@ -1677,11 +2299,13 @@ private fun MyLutFilmstrip(
             }
             items(items = userLuts, key = { it.id }) { lut ->
                 val thumb = rememberLutThumb(preview, lut.id)
+                val selected = lut.id == selectedLutId
                 LutThumbSquare(
                     label = lut.name,
-                    selected = lut.id == selectedLutId,
-                    onClick = { onApplyLut(lut.id) },
-                    onDeleteClick = { onDeleteLut(lut.id) }
+                    selected = selected,
+                    onClick = { if (selected) onApplyLut(null) else onApplyLut(lut.id) },
+                    onDeleteClick = { onDeleteLut(lut.id) },
+                    onPeek = { peeking -> onPeekLut(lut.id, peeking) }
                 ) {
                     if (thumb != null) {
                         Image(
@@ -1843,6 +2467,40 @@ private val lutFallbackBitmap: Bitmap by lazy {
     }
 }
 
+/**
+ * Toque = clique; com [onPeek], segurar espia (onPress) e o toque
+ * aplica (onTap). O onPress chama onPeek(true) no down e
+ * onPeek(false) no awaitRelease — o gesto é cancelado pelo scroll
+ * da tira sem deixar o peek travado.
+ */
+@Composable
+private fun holdPeekModifier(
+    onClick: () -> Unit,
+    onPeek: ((Boolean) -> Unit)?,
+    enabled: Boolean = true
+): Modifier {
+    val latestOnClick by rememberUpdatedState(onClick)
+    val latestOnPeek by rememberUpdatedState(onPeek)
+    if (!enabled) return Modifier
+    return if (onPeek == null) {
+        Modifier.clickable(onClick = { latestOnClick() })
+    } else {
+        Modifier.pointerInput(Unit) {
+            detectTapGestures(
+                onPress = {
+                    latestOnPeek?.invoke(true)
+                    try {
+                        awaitRelease()
+                    } finally {
+                        latestOnPeek?.invoke(false)
+                    }
+                },
+                onTap = { latestOnClick() }
+            )
+        }
+    }
+}
+
 @Composable
 private fun LutThumbSquare(
     label: String,
@@ -1850,6 +2508,8 @@ private fun LutThumbSquare(
     onClick: () -> Unit,
     onDeleteClick: (() -> Unit)? = null,
     sealed: Boolean = false,
+    enabled: Boolean = true,
+    onPeek: ((Boolean) -> Unit)? = null,
     thumbnail: @Composable () -> Unit
 ) {
     Column(
@@ -1857,7 +2517,8 @@ private fun LutThumbSquare(
         modifier = Modifier
             .width(72.dp)
             .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
+            .then(holdPeekModifier(onClick, onPeek, enabled))
+            .then(if (enabled) Modifier else Modifier.alpha(0.45f))
     ) {
         Box(
             modifier = Modifier
@@ -1885,22 +2546,30 @@ private fun LutThumbSquare(
                 )
             }
             if (onDeleteClick != null) {
+                // Área de toque de 48dp (o desenho continua 22dp),
+                // longe o bastante do toque que aplica o LUT.
                 Box(
-                    contentAlignment = Alignment.Center,
+                    contentAlignment = Alignment.TopEnd,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(4.dp)
-                        .size(22.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                        .clip(CircleShape)
+                        .size(48.dp)
                         .clickable(onClick = onDeleteClick)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = "Apagar $label",
-                        tint = Color.White,
-                        modifier = Modifier.size(13.dp)
-                    )
+                    Box(
+                        contentAlignment = Alignment.Center,
+                        modifier = Modifier
+                            .padding(4.dp)
+                            .size(22.dp)
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                            .clip(CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = "Apagar $label",
+                            tint = Color.White,
+                            modifier = Modifier.size(13.dp)
+                        )
+                    }
                 }
             }
         }
@@ -1958,6 +2627,7 @@ private fun PresetThumbSquare(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    onPeek: ((Boolean) -> Unit)? = null,
     thumbnail: @Composable () -> Unit
 ) {
     Column(
@@ -1965,7 +2635,7 @@ private fun PresetThumbSquare(
         modifier = Modifier
             .width(72.dp)
             .clip(MaterialTheme.shapes.small)
-            .clickable(onClick = onClick)
+            .then(holdPeekModifier(onClick, onPeek))
     ) {
         Box(
             modifier = Modifier
