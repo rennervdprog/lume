@@ -60,6 +60,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,6 +88,23 @@ import app.lume.ui.theme.LumeSpacing
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+/**
+ * Savers por nome para os enums da seleção do Editor: o
+ * rememberSaveable só guarda tipos que o Bundle entende, e enum
+ * não é um deles. Sem isso, o `remember` puro morre ao navegar
+ * para o Pro e voltar — a tela renasce no padrão (Ajustar, na
+ * Exposição) em vez da ferramenta que estava aberta.
+ */
+private val editorToolSaver = Saver<EditorTool, String>(
+    save = { it.name },
+    restore = { runCatching { EditorTool.valueOf(it) }.getOrDefault(EditorTool.ADJUST) }
+)
+
+private val cropTabSaver = Saver<CropTab, String>(
+    save = { it.name },
+    restore = { runCatching { CropTab.valueOf(it) }.getOrDefault(CropTab.CROP) }
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(
@@ -98,18 +117,29 @@ fun EditorScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    var selectedTool by remember { mutableStateOf(EditorTool.ADJUST) }
-    var splitMode by remember { mutableStateOf(false) }
-    var splitFraction by remember { mutableFloatStateOf(0.5f) }
+    // Seleção da tela com rememberSaveable (não remember): ao
+    // navegar para o Pro a tela sai da composição e o remember
+    // puro morre — na volta ela renascia no padrão (Ajustar, na
+    // Exposição) e a ferramenta escolhida se perdia. O
+    // rememberSaveable sobrevive à ida e volta no back stack.
+    // Diálogos e pedidos de entrada única ficam no remember:
+    // não precisam sobreviver à navegação.
+    var selectedTool by rememberSaveable(stateSaver = editorToolSaver) {
+        mutableStateOf(EditorTool.ADJUST)
+    }
+    var splitMode by rememberSaveable { mutableStateOf(false) }
+    var splitFraction by rememberSaveable { mutableFloatStateOf(0.5f) }
     var showSaveDialog by remember { mutableStateOf(false) }
     var showExportSheet by remember { mutableStateOf(false) }
     var qrPreset by remember { mutableStateOf<Preset?>(null) }
-    var showOriginal by remember { mutableStateOf(false) }
-    var panelVisible by remember { mutableStateOf(true) }
-    var cropTab by remember { mutableStateOf(CropTab.CROP) }
-    var adjustSub by remember { mutableStateOf("exposure") }
-    var hslChannel by remember { mutableIntStateOf(0) }
-    var hslAttr by remember { mutableStateOf("hue") }
+    var showOriginal by rememberSaveable { mutableStateOf(false) }
+    var panelVisible by rememberSaveable { mutableStateOf(true) }
+    var cropTab by rememberSaveable(stateSaver = cropTabSaver) {
+        mutableStateOf(CropTab.CROP)
+    }
+    var adjustSub by rememberSaveable { mutableStateOf("exposure") }
+    var hslChannel by rememberSaveable { mutableIntStateOf(0) }
+    var hslAttr by rememberSaveable { mutableStateOf("hue") }
     var pendingPresetId by remember { mutableStateOf<String?>(null) }
     var pendingFilterTab by remember { mutableStateOf<FilterTab?>(null) }
 

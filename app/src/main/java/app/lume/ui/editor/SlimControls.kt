@@ -52,6 +52,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import app.lume.ui.theme.LumeSpacing
@@ -307,17 +308,22 @@ internal data class IconSubOption(
 /**
  * Selo Pro (preview do selo, 19/11): círculo azul de 18dp com uma
  * estrela branca, anel branco de 2dp para ler sobre qualquer cor.
- * Vai no canto superior direito do item trancado.
+ * Vai no canto superior direito do item trancado. No trilho de
+ * ícones o selo usa 14dp: com 18dp ele cobria o quadrante superior
+ * direito do ícone de 24dp e o HSL lia como cortado (o ponto de
+ * cima e o arco do anel sumiam atrás do selo) — o brilho dentro
+ * escala junto (61% do tamanho).
  */
 @Composable
 internal fun ProSealBadge(
     modifier: Modifier = Modifier,
+    size: Dp = 18.dp,
     contentDescription: String = "Pro"
 ) {
     Box(
         contentAlignment = Alignment.Center,
         modifier = modifier
-            .size(18.dp)
+            .size(size)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primary)
             .border(2.dp, Color.White, CircleShape)
@@ -326,7 +332,7 @@ internal fun ProSealBadge(
             imageVector = SolarizeIcons.ProSparkle,
             contentDescription = contentDescription,
             tint = MaterialTheme.colorScheme.onPrimary,
-            modifier = Modifier.size(11.dp)
+            modifier = Modifier.size(size * 0.61f)
         )
     }
 }
@@ -383,7 +389,10 @@ internal fun IconSubRail(
                             onSelect(option.id)
                         }
                     }
-                    .padding(vertical = 6.dp)
+                    // Topo com 10dp (não 6dp): o selo de 14dp sai 9dp
+                    // para cima do ícone e o clip da coluna cortaria
+                    // 3dp dele com o padding antigo.
+                    .padding(top = 10.dp, bottom = 6.dp)
             ) {
                 Box(contentAlignment = Alignment.TopEnd) {
                     Icon(
@@ -393,8 +402,14 @@ internal fun IconSubRail(
                         modifier = Modifier.size(24.dp)
                     )
                     if (option.sealed || option.proInside) {
+                        // Selo de 14dp no cantinho (offset 9/-9): com
+                        // 18dp e offset 6/-6 ele cobria o quadrante
+                        // superior direito do ícone — no HSL o ponto
+                        // e o arco do anel sumiam e o ícone lia como
+                        // cortado. Aqui ele só toca o canto.
                         ProSealBadge(
-                            modifier = Modifier.offset(x = 6.dp, y = (-6).dp)
+                            size = 14.dp,
+                            modifier = Modifier.offset(x = 9.dp, y = (-9).dp)
                         )
                     }
                 }
