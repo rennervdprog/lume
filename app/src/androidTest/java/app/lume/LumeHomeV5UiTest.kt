@@ -70,9 +70,15 @@ class LumeHomeV5UiTest {
         composeRule.onNodeWithText("Nenhuma edição em andamento").assertExists()
         composeRule.onNodeWithText("Editar foto").assertExists()
         // Galeria do emulador vazia: a grade nasce sem fotos.
-        composeRule.waitUntil(timeoutMillis = 8000) {
-            nodesWith("Nenhuma foto encontrada neste aparelho.")
-        }
+        // A grade é lazy: o texto do estado vazio só entra na árvore
+        // quando rola para a tela — com o dock da 0.15.3 a viewport
+        // encolheu e ele nasce abaixo da dobra, então esperar por
+        // ele parado nunca resolve (foi o que derrubou a run
+        // 44851570127 duas vezes). Rola a grade até ele.
+        composeRule.onNodeWithTag("photos_grid")
+            .performScrollToNode(hasText("Nenhuma foto encontrada neste aparelho."))
+        composeRule.onNodeWithText("Nenhuma foto encontrada neste aparelho.")
+            .assertIsDisplayed()
         composeRule.onNodeWithTag("fab_new_edit").assertIsDisplayed()
         uitestShot("06_comecar")
     }
